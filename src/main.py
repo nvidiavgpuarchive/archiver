@@ -1,12 +1,18 @@
 import asyncio
+import datetime
 import json
 import os
 import random
 import shutil
+import signal
+import tempfile
 import time
+import traceback
 from typing import TypedDict
+from datetime import datetime
 
 import aiofiles
+
 from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn, ProgressColumn, Task
 from rich.text import Text
 
@@ -24,6 +30,44 @@ idle_workers: dict[int, bool] = {}
 
 shutdown_event = asyncio.Event()
 state_filelock = asyncio.Lock()
+
+ctrl_c_counter = 0
+
+
+# crash handling
+def signal_handler(signum, frame):
+    global ctrl_c_counter
+    ctrl_c_counter += 1
+
+    if ctrl_c_counter == 1:
+        # First Ctrl+C: Start graceful shutdown
+        _logger.warning("Terminating command received.")
+        raise KeyboardInterrupt
+
+    elif ctrl_c_counter == 2:
+        # Second Ctrl+C: Emergency shutdown with crash log
+        try:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            crash_file = os.path.join(tempfile.gettempdir(), f"crash_{timestamp}.log")
+
+            with open(crash_file, 'w') as f:
+                f.write(f"Emergency shutdown triggered at {datetime.now()}\n")
+                f.write("\nTraceback at point of interrupt:\n\n\n")
+                traceback.print_stack(frame, file=f)
+            _logger.warning(f"Crash log saved to {crash_file}")
+        except Exception as e :
+            _logger.warning("Another exception occured when trying to write log.")
+            print(e)
+            _logger.warning("Quit without saving the log.")
+            pass  # If we can't write the crash log, just exit
+
+        _logger.warning("Force quitting...")
+        os._exit(1)
+
+    else:
+        # Third or more Ctrl+C: Immediate force quit
+        os._exit(2)
+
 
 
 class SpeedColumnBase(ProgressColumn):
@@ -86,19 +130,24 @@ class StateDict(TypedDict):
 
 # handles the actual logic
 async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
+    _logger = get_logger(f"worker {worker_id}")
     _logger.info(f"Worker {worker_id} started.")
     global idle_workers
     while not shutdown_event.is_set():
         try:
             task: TypedDict = await asyncio.wait_for(queue.get(), timeout=1)
-            _logger.info(f"Worker {worker_id} got task: {task['name']}")
+            _logger.info(f"Got task: '{task["meta"]['description']}'")
             idle_workers[worker_id] = False
-        except:
+        except asyncio.TimeoutError:
             idle_workers[worker_id] = True
             continue
+        except Exception as e:
+            _logger.error(f"Encountered error: {e}")
+            idle_workers[worker_id] = False
+            continue
 
-        if not utils.is_link_alive(task["download"]["url"]):
-            _logger.info(f"Worker {worker_id} download link expired, skipping. ")
+        if not await  utils.is_link_alive(task["download"]["url"]):
+            _logger.info(f"Download link expired, skipping. ")
             continue
 
         download_dir = config["global"]["download_dir"]
@@ -117,13 +166,18 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                     filepath_list.append(await downloader.download())
         except Exception as e:
             await fail_counter.increment()
-            _logger.warning(f"Worker {worker_id} download failed with exception {str(e)}, skipping.")
+            _logger.warning(f"Download failed with exception {str(e)}, skipping.")
             continue
 
         hash_list = await asyncio.gather(*(utils.async_md5(filepath) for filepath in filepath_list))
         hash_dict = {os.path.basename(filepath_list[i]): hash_list[i] for i in range(len(hash_list))}
+        # if task["download"]["checksumUrl"] and task["download"]["checksumUrl"] not in hash_list:
+        #     _logger.error(f"'{task["meta"]["description"]}' checksum mismatch. Skipping this one.")
+        #     for fp in filepath_list:
+        #         os.remove(fp)
+        #     continue
 
-        _logger.info(f"Worker {worker_id} start uploading to IA.")
+        _logger.info(f"Start uploading to IA.")
         async with IAClient(config["ia"]["s3_access_key"], config["ia"]["s3_secret_key"],
                             https_proxy=https_proxy) as ia:
             bucket_name = config["ia"]["bucket_prefix"] + main_filename
@@ -142,7 +196,7 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                 await fail_counter.increment()
                 _logger.warning(f"Upload to IA possibly unsuccessful with exception {str(e)}, proceed anyway. ")
 
-        _logger.info(f"Worker {worker_id} upload to IA finished, record and remove any leftover files.")
+        _logger.info(f"Upload to IA finished, record and remove any leftover files.")
 
         state_dict: StateDict = {"meta": task["meta"], "hash_dict": hash_dict, "time_added": time.time(),
                                  "upload_verified": False, "is_complete": False}
@@ -159,7 +213,7 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
         for fp in filepath_list:
             os.remove(fp)
 
-    _logger.info(f"Worker {worker_id} stopped.")
+    _logger.info(f"Stopped.")
 
 
 async def verification_worker(config, delay=10, n=8):
@@ -168,6 +222,7 @@ async def verification_worker(config, delay=10, n=8):
     and attempts to verify them.
     """
 
+    _logger = get_logger("verification")
     _logger.info("Verification worker started.")
     state_filepath = utils.proj_path("config/state.json")
 
@@ -177,7 +232,7 @@ async def verification_worker(config, delay=10, n=8):
         async with state_filelock:
             async with aiofiles.open(state_filepath, "r") as f:
                 state_dict = json.loads(await f.read())
-        unverified = [item for item in state_dict.items() if not item["upload_verified"]]
+        unverified = [item for item in state_dict.items() if not item[1]["upload_verified"]]
         if not unverified:
             continue
 
@@ -198,12 +253,21 @@ async def verification_worker(config, delay=10, n=8):
                 bucket = to_verify[idx][0]
                 state_dict[bucket]["upload_verified"] = True
                 state_dict[bucket]["is_complete"] = not bool(result)
+                _logger.info(f"Bucket {bucket} verified to be {not bool(result) }")
             async with aiofiles.open(state_filepath, "w") as f:
                 json_str = json.dumps(state_dict, indent=4)
                 await f.write(json_str)
 
 
 async def main():
+
+    signal.signal(signal.SIGINT, signal_handler)
+    try:
+        signal.siginterrupt(signal.SIGINT, False)
+    except AttributeError:
+        pass  # Not available on all platforms
+
+
     # config and state file setup
     config = utils.read_config()
     state_filepath = utils.proj_path("config/state.json")
@@ -240,6 +304,14 @@ async def main():
         return meta1["downloadId"] == meta2["downloadId"] or meta1["description"] == meta2["description"]
 
     try:
+
+
+        await portal.load_session_from_cookies()
+        if await portal.is_loggedin():
+            meta_list = await portal.list_downloads()
+            progress_bar.update(progress_bar_task, total=len(meta_list))
+
+        global idle_workers
         while fail_counter.value < 20:  # hardcoded for now
             await asyncio.sleep(1)
             if not await portal.is_loggedin():  # login and refresh download list
@@ -257,7 +329,7 @@ async def main():
 
             meta_to_download = [meta for meta in meta_list if
                                 not any(same_meta(meta, m) for m in meta_added_list) and not any(
-                                    same_meta(meta, m) for m in state_json.values())]
+                                    same_meta(meta, i["meta"]) for i in state_json.values())]
             if not meta_to_download: break
             progress_bar.update(progress_bar_task, advance=len(meta_to_download))
 
@@ -276,14 +348,21 @@ async def main():
                 meta_added_list.append(meta)
                 task: TaskDict = {"meta": meta, "download": download}
                 await queue.put(task)
-                _logger.info(f"Task {meta['description']} queued.")
+                _logger.info(f"Task' {meta['description']}' queued.")
+
+            idle_workers = { k: False for k in idle_workers}
+
+
     except KeyboardInterrupt:
         _logger.warning("Initiating graceful shutdown...")
+    except Exception as e:
+        _logger.fatal(f"Unexpected exception {e}, quitting.")
+        traceback.print_exc()
     finally:
         progress_bar.stop()
         shutdown_event.set()
         await asyncio.gather(*async_workers)
-        await asyncio.gather(*async_verification)
+        await asyncio.gather(async_verification)
 
         shutil.rmtree(download_dir)
         os.mkdir(download_dir)

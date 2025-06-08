@@ -130,7 +130,7 @@ class NvidiaWebPortal:
                 browser = await p.chromium.connect(self._remote_playwright_link)
                 _logger.info(f"Connected to remote playwright instance {self._remote_playwright_link}")
             else:
-                browser = await p.chromium.launch(headless=False, proxy=proxy_options)
+                browser = await p.chromium.launch(headless=not debug, proxy=proxy_options)
                 _logger.info("Launched local playwright instance.")
 
             context = await browser.new_context()
@@ -247,9 +247,9 @@ class NvidiaWebPortal:
         async with aiofiles.open(utils.proj_path("config/cookies.json"), 'w') as f:
             await f.write(json.dumps(playwright_cookies))
 
-        await self._load_session_from_cookies()
+        await self.load_session_from_cookies()
 
-    async def _load_session_from_cookies(self):
+    async def load_session_from_cookies(self):
         async with aiofiles.open(utils.proj_path("config/cookies.json"), 'r') as f:
             playwright_cookies = json.loads(await f.read())
 

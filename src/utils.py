@@ -173,9 +173,8 @@ class AsyncCounter:
 
     async def increment(self):
         async with self._lock:
-            async with self._lock:
-                self.value += 1
-                return self.value
+            self.value += 1
+            return self.value
 
     async def decrement(self):
         async with self._lock:
@@ -188,7 +187,14 @@ class AsyncCounter:
             return self.value
 
 
-if __name__ == "__main__":
+
+async def main() :
     print(find_free_port())
     print(human_readable_size(99999999999999999999))
     print(is_console_interactive())
+    cnter = AsyncCounter()
+    await cnter.increment()
+    print(cnter.value)
+
+if __name__ == "__main__":
+    asyncio.run(main() )

@@ -90,8 +90,21 @@ class IAClient:
                 and (bucket[0].isalpha() or bucket.isnumeric())
         ):
             utils.log_error_and_raise(_logger, f"Invalid identifier {bucket}")
-        if any(m in custom_metadata.keys() for m in ["identifier", "mediatype", "title", "description", "collection"]):
-            utils.log_error_and_raise(_logger, f"Custom metadata overlap with required metadata.")
+
+        required_metadata = {
+            "identifier" : bucket,
+            "mediatype" : meta_mediatype,
+            "title" : meta_title,
+            "description" : meta_description,
+            "collection" : meta_collection
+        }
+        for k, v in custom_metadata.items() :
+            if k in required_metadata:
+                if v != required_metadata[k]:
+                    _logger.error(  f"parameter[{k}] = {required_metadata[k]}, custom[{k}] = {v}")
+                    utils.log_error_and_raise(_logger, "Discrepancy between parameter and custom metadata.")
+                else:
+                    del custom_metadata[k]
 
         total_bytes = 0
         for filepath in filepaths:

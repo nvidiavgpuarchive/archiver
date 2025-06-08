@@ -15,10 +15,22 @@ def get_logger(name=None) -> logging.Logger:
     logger.setLevel(log_level)
 
     if not logger.handlers:
-        handler = RichHandler(show_time=True, show_level=True, show_path=False, rich_tracebacks=True)
-        handler.setLevel(log_level)
-        logger.addHandler(handler)
-        logger.propagate = False
-        logger.debug(f"Logger for '{name}' initialized with RichHandler.")
+            # Create formatter that includes logger name
+            format_pattern = "[%(name)s] \t %(message)s"
+            formatter = logging.Formatter(format_pattern)
+
+            handler = RichHandler(
+                show_time=True,
+                show_level=True,
+                show_path=False,
+                rich_tracebacks=True,
+                log_time_format="[%X]"
+            )
+            handler.setFormatter(formatter)
+            handler.setLevel(log_level)
+            logger.addHandler(handler)
+            logger.propagate = False
+            logger.debug(f"Logger for '{name}' initialized with RichHandler.")
 
     return logger
+

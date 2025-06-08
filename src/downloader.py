@@ -17,7 +17,8 @@ _logger = get_logger(__name__)
 
 class AsyncChunkDownloader:
     """
-    Aynchronous downloader, that supports chunk based downloads
+    Aynchronous downloader, that supports chunk based downloads and auto resume
+    within each chunk if error happens
     Each downloader instance is responsible for one download tasks and
     should be deleted once download is done or failed.
     Mulitple downloader can run at the same time.
@@ -46,16 +47,10 @@ class AsyncChunkDownloader:
         self._total_bytes = 0  # filled by fetch metadata
         self._support_range = False  # filled by fetch matadata
         self._filename = None  # filled by fetch matadata
-        self._bytes_downloaded = 0  # filled by download
 
     def status(self):
-        return {
-            "state": self._state,
-            "total_bytes": self._total_bytes,
-            "support_range": self._support_range,
-            "filename": self._filename,
-            "bytes_downloaded": self._bytes_downloaded
-        }
+        return {"state": self._state, "total_bytes": self._total_bytes, "support_range": self._support_range,
+                "filename": self._filename, "bytes_downloaded": self._bytes_downloaded}
 
     async def download(self) -> str:
         """
@@ -80,14 +75,10 @@ class AsyncChunkDownloader:
             self._num_chunks = 1
         chunks = self._divide_into_chunks()
 
-        _logger.info(
-            f"Downloading {self._filename} with {self._num_chunks} chunks,"
-            f" total size {utils.human_readable_size_str(self._total_bytes)} ")
+        _logger.info(f"Downloading {self._filename} with {self._num_chunks} chunks,"
+                     f" total size {utils.human_readable_size_str(self._total_bytes)} ")
 
-        download_tasks = [
-            self._download_chunk(start, end, idx)
-            for idx, (start, end) in enumerate(chunks)
-        ]
+        download_tasks = [self._download_chunk(start, end, idx) for idx, (start, end) in enumerate(chunks)]
         chunk_filelist = await asyncio.gather(*download_tasks)
         if self._bytes_downloaded != self._total_bytes:
             for f in chunk_filelist:
@@ -147,11 +138,9 @@ class AsyncChunkDownloader:
                 filename = os.path.basename(path)
             self._filename = utils.sanitize_filename(filename)
 
-        self._support_range = await self._is_url_supports_range(self._url)
-        # self._support_range = True
+        self._support_range = await self._is_url_supports_range(self._url)  # self._support_range = True
 
     def _divide_into_chunks(self) -> List[Tuple]:
-
         base = self._total_bytes // self._num_chunks
         reminder = self._total_bytes % self._num_chunks
 
@@ -165,16 +154,74 @@ class AsyncChunkDownloader:
             start = end
         return res
 
+    async def _basic_download(self, attempts=3) -> str | None:
+        """
+        Download the whole file in series . If error occurs, startover.
+        Returns one single file, which is final.
+        """
+
+        final_filepath = os.path.join(self._output_dir, self._filename)
+        for _ in range(attempts):
+            try:
+                bytes_downloaded = 0
+                async with self._session.get(self._url, proxy=self._proxy) as resp:
+                    resp.raise_for_status()
+                    async with aiofiles.open(final_filepath, "wb") as f:
+                        async for piece in resp.content.iter_chunked(n=1024 * 64):
+                            await f.write(piece)
+                            bytes_downloaded += len(piece)
+                            AsyncChunkDownloader.global_bytes_downloaded += len(piece)
+                if bytes_downloaded != self._total_bytes:
+                    utils.log_error_and_raise(_logger, f"Expect {self._total_bytes}, got {bytes_downloaded}.")
+                return final_filepath
+            except Exception as e:
+                _logger.warning(f"Download error: {str(e)}, try again.")
+        else:
+            os.remove(final_filepath)  # clean up if failed
+            utils.log_error_and_raise(f"Failed to download {final_filepath}")
+            return None
+
+    async def _chunk_download(self, start: int, end: int, part_index: int, attempts=3) -> str | None:
+        """
+        Advanced, download one chunk only. If any error occurs, simply resume from the last success byte downloaded.
+        Fail after 3 consecutive times of no bytes received. (Meaning retry - no bytes received - retry)
+
+        In http header, start and end is inclusive, and start from 0. Meaning if we want to download the first byte,
+        we do bytes = 0-0
+        For this method, by python convention we start from 0 inclusive and end non inclusive. So to download first byte
+        we do start = 0, end = 1
+        """
+
+        chunk_filepath = os.path.join(self._output_dir, f"{self._filename}.{part_index}.chunk")
+        chunk_bytes_downloaded = 0
+        chunk_bytes_last_downloaded = 0
+        last_exception = None
+
+        cons_fail = 0
+        while cons_fail < attempts:
+            try:
+                current_start = start + chunk_bytes_downloaded
+            except Exception as e:
+                last_exception = e
+                if chunk_bytes_last_downloaded == chunk_bytes_downloaded:
+                    cons_fail += 1
+                else:
+                    cons_fail = 0
+                    chunk_bytes_last_downloaded = chunk_bytes_downloaded
+        else:
+            os.remove(chunk_filepath)  # clean up if failed
+            utils.log_error_and_raise(_logger,
+                                      f"Failed to download part {part_index} from {self._url}, last exception : {last_exception}")
+            return None
+
     async def _download_chunk(self, start: int, end: int, part_index: int, attempts=3) -> str | None:
         """
-        downlodas chunk, return full chunk filepath
+        downlooad chunk, return full chunk filepath
         [start, end)
         For a range of 100 bytes, by convention start = 0 and end = 100
         """
-        headers = {
-            "Range": f"bytes={start}-{end - 1}",
-            # for a total of 100 bytes, range is from 0 to 99 inclusive
-        }
+        headers = {"Range": f"bytes={start}-{end - 1}",  # for a total of 100 bytes, range is from 0 to 99 inclusive
+                   }
         headers = headers if not (self._num_chunks == 1) else None
 
         chunk_filepath = os.path.join(self._output_dir, f"{self._filename}.{part_index}.chunk")
@@ -192,16 +239,14 @@ class AsyncChunkDownloader:
                             AsyncChunkDownloader.global_bytes_downloaded += len(chunk)
 
                 if chunk_bytes_downloaded != end - start:
-                    utils.log_error_and_raise(
-                        _logger,
-                        f"Chunk download failed. "
-                        f"Expect {end - start} bytes, got {chunk_bytes_downloaded} bytes")
-                _logger.debug(
-                    f"Chunk {part_index} downloaded to {chunk_filepath}, "
-                    f"size {utils.human_readable_size_str(chunk_bytes_downloaded)}")
+                    utils.log_error_and_raise(_logger, f"Chunk download failed. "
+                                                       f"Expect {end - start} bytes, got {chunk_bytes_downloaded} "
+                                                       f"bytes")
+                _logger.debug(f"Chunk {part_index} downloaded to {chunk_filepath}, "
+                              f"size {utils.human_readable_size_str(chunk_bytes_downloaded)}")
                 return chunk_filepath
             except Exception as e:
-                _logger.warning(f"{self._filename} part {part_index} failed, retrying. \n {e}")
+                _logger.warning(f"{self._filename} part {part_index} failed with error '{e}'")
         else:
             os.remove(chunk_filepath)  # clean up if failed
             utils.log_error_and_raise(_logger, f"Failed to download part {part_index} from {self._url}")
