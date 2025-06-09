@@ -38,9 +38,8 @@ class GmailClient():
         """
         if self._imap_client is not None and await self._is_connected():
             return
-        self._imap_client = (
-            aioimaplib.IMAP4_SSL(self._host)) if self._port == 993 \
-            else aioimaplib.IMAP4(self._host, self._port)
+        self._imap_client = (aioimaplib.IMAP4_SSL(self._host)) if self._port == 993 else aioimaplib.IMAP4(self._host,
+                                                                                                          self._port)
         await self._imap_client.wait_hello_from_server()
         await self._imap_client.login(self._username, self._password)
 
@@ -61,7 +60,7 @@ class GmailClient():
             self._trashbox_name = [k for k, v in mailbox_list.items() if "trash" in v][0]
             self._junkbox_name = [k for k, v in mailbox_list.items() if "junk" in v][0]
 
-        _logger.info(f"Logged in to IMAP server {self._host}:{self._port}")
+        _logger.info(f"Logged in to IMAP server '{self._host}:{self._port}'")
 
     async def _is_connected(self):
         try:
@@ -76,8 +75,7 @@ class GmailClient():
         result = []
         for mailbox in ["INBOX", self._junkbox_name]:
             await self._imap_client.select(mailbox)
-            criteria = ("FROM", sender) if not unseen \
-                else ("FROM", sender, "UNSEEN")
+            criteria = ("FROM", sender) if not unseen else ("FROM", sender, "UNSEEN")
             _, data = await self._imap_client.search(*criteria)
             result += [(mailbox, eid) for eid in data[0].split()]
         return result
@@ -151,20 +149,17 @@ class GmailClient():
             'sender': sender,
             'recipients': recipients,
             'time': date_val.timestamp(),
-            'body': body.strip(),
-        }
+            'body': body.strip(), }
 
 
 # test email out
 if __name__ == "__main__":
     async def main():
         config = utils.read_config()
-        gmail_client = GmailClient(
-            config["imap"]["host"],
+        gmail_client = GmailClient(config["imap"]["host"],
             config["imap"]["port"],
             config["imap"]["username"],
-            config["imap"]["password"]
-        )
+            config["imap"]["password"])
         await gmail_client.connect()
         eids = await gmail_client.search_for("account@nvidia.com", unseen=False)
         for mailbox, eid in eids:

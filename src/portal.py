@@ -36,6 +36,10 @@ class MetaInfo(TypedDict):
     description: str
 
 
+def same_meta(meta1: MetaInfo, meta2: MetaInfo):
+    return meta1["downloadId"] == meta2["downloadId"] or meta1["description"] == meta2["description"]
+
+
 class DownloadInfo(TypedDict):
     id: str
     url: str
@@ -48,7 +52,11 @@ class NvidiaWebPortal:
 
     """
 
-    def __init__(self, username: str, password: str, gmail_client: GmailClient, https_proxy: str = None,
+    def __init__(self,
+                 username: str,
+                 password: str,
+                 gmail_client: GmailClient,
+                 https_proxy: str = None,
                  remote_playwright_link: str = None):
         self._https_proxy = https_proxy
         self._username = username
@@ -60,11 +68,12 @@ class NvidiaWebPortal:
         self._userinfo: Optional[Dict] = None
         self._virtual_groups: Optional[Dict] = None
 
-    async def list_downloads(self) -> Optional[List[MetaInfo]]:
+    async def list_meta(self) -> Optional[List[MetaInfo]]:
         orgname = self._userinfo["user"]["orgName"]
         vgroup_id = self._virtual_groups["virtualGroups"][0]["id"]
         url = f"https://api.licensing.nvidia.com/v1/org/{orgname}/virtual-groups/{vgroup_id}/downloads"
-        data = {"downloadsFetch": {}}
+        data = {
+            "downloadsFetch": {}}
 
         async with self._session.post(url, json=data) as resp:
             if resp.status == 200:
@@ -78,7 +87,8 @@ class NvidiaWebPortal:
         orgname = self._userinfo["user"]["orgName"]
         vgroup_id = self._virtual_groups["virtualGroups"][0]["id"]
         url = f"https://api.licensing.nvidia.com/v1/org/{orgname}/virtual-groups/{vgroup_id}/download/url"
-        data = {"downloadId": [download_id]}
+        data = {
+            "downloadId": [download_id]}
 
         async with self._session.post(url, json=data) as resp:
             if resp.status == 200:
@@ -123,7 +133,8 @@ class NvidiaWebPortal:
         if self._https_proxy and (not self._https_proxy.startswith("https://") or not ":" in self._https_proxy):
             _logger.error("https proxy must in format https://<host>:<port>")
             utils.log_error_and_raise(_logger, f"Invalid proxy format {self._https_proxy}")
-        proxy_options = None if not self._https_proxy else {"server": self._https_proxy}
+        proxy_options = None if not self._https_proxy else {
+            "server": self._https_proxy}
 
         async with async_playwright() as p:
             if self._remote_playwright_link:
@@ -154,8 +165,9 @@ class NvidiaWebPortal:
 
             # try login in a loop
             # TODO: Nvidia asks for 2fa sometimes. Add it here
-            urls = {"success": "https://ui.licensing.nvidia.com",
-                    "email_verification": "https://login.nvgs.nvidia.com/v1/nfactor/email-auth-wait**"}
+            urls = {
+                "success": "https://ui.licensing.nvidia.com",
+                "email_verification": "https://login.nvgs.nvidia.com/v1/nfactor/email-auth-wait**"}
             for _ in range(3):
                 try:
                     tag = await utils.playwright_wait_for_any(page, urls, timeout=30)
@@ -181,6 +193,7 @@ class NvidiaWebPortal:
                     page2 = await context.new_page()
                     await page2.goto(link)
                     await asyncio.sleep(10)
+                    await page2.close()
                     _logger.info("Email verification cleared.")
 
                 await page.bring_to_front()
@@ -188,6 +201,8 @@ class NvidiaWebPortal:
 
             await self._load_session_from_context(context)
             await self._update_userinfo()
+            await page.close()
+            await context.close()
 
             try:
                 sub_end_date = self._virtual_groups["virtualGroups"][0]["entitlements"][0]["entitlementProductKeys"][0][
@@ -263,28 +278,48 @@ class NvidiaWebPortal:
         jar = session.cookie_jar
         for cookie in playwright_cookies:
             if 'domain' in cookie:
-                jar.update_cookies({cookie['name']: cookie['value']}, response_url=URL(f"http://{cookie['domain']}"))
+                jar.update_cookies({
+                    cookie['name']: cookie['value']}, response_url=URL(f"http://{cookie['domain']}"))
             else:
-                jar.update_cookies({cookie['name']: cookie['value']})
+                jar.update_cookies({
+                    cookie['name']: cookie['value']})
 
         self._session = session
 
 
 async def main():
     config = utils.read_config()
-    gmail_client = GmailClient(config["imap"]["host"], config["imap"]["port"], config["imap"]["username"],
+    gmail_client = GmailClient(config["imap"]["host"],
+                               config["imap"]["port"],
+                               config["imap"]["username"],
                                config["imap"]["password"])
 
-    portal = NvidiaWebPortal(username=config["portal"]["nvidia_username"], password=config["portal"]["nvidia_password"],
-                             https_proxy=config["global"]["https_proxy"], gmail_client=gmail_client)
+    portal = NvidiaWebPortal(username=config["portal"]["nvidia_username"],
+                             password=config["portal"]["nvidia_password"],
+                             https_proxy=config["global"]["https_proxy"],
+                             gmail_client=gmail_client)
 
     connect_task = asyncio.create_task(gmail_client.connect())
     await portal.login(debug=True)
 
-    downloads = await portal.list_downloads()
-    print(downloads[0])
-    downId = downloads[0]["downloadId"]
-    print(await portal.get_download_url(downId))  # await asyncio.sleep(10)
+    metas = await portal.list_meta()
+
+    async def download_info_worker(taskid, meta: MetaInfo, semaphore):
+        async with semaphore:
+            _logger.info(f"{taskid} Fetching '{meta["description"]}'")
+            for _ in range(3):
+                try:
+                    download = await portal.get_download_url(meta["downloadId"])
+                except:
+                    continue
+
+            return download
+
+    semaphore = asyncio.Semaphore(16)
+    downloads = await asyncio.gather(*(download_info_worker(taskid, meta, semaphore) for taskid, meta in
+                                       enumerate(metas)))
+    with open(utils.proj_path("config/downloads.json"), "w") as f:
+        f.write(json.dumps(downloads, indent=4, default=str))
 
 
 if __name__ == "__main__":

@@ -1,18 +1,23 @@
 # misc functions
 import asyncio
+import gc
 import hashlib
-import json
+import html
 import logging
 import os
 import re
+import resource
 import socket
 import sys
+import threading
+import types
 import zipfile
 from contextlib import closing
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Coroutine
 
 import aiofiles
 import aiohttp
+import yaml
 from playwright.async_api import Page
 
 
@@ -26,8 +31,8 @@ def proj_path(filepath: str) -> str:
 
 
 def read_config() -> dict:
-    with open(proj_path("config/config.json"), "r") as f:
-        return json.load(f)
+    with open(proj_path("config/config.yaml"), "r") as f:
+        return yaml.safe_load(f)
 
 
 def log_error_and_raise(logger: logging.Logger, errormsg: str):
@@ -122,8 +127,9 @@ def sanitize_filename(filename: str, replacement: str = "_", max_length: int = 2
     return sanitized
 
 
-def human_readable_size(num_bytes: int) -> Tuple[float, str]:
-    scale = ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes", "petabytes"]
+def human_readable_size(num_bytes: int, long=True) -> Tuple[float, str]:
+    scale = ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes", "petabytes"] if long else ["B", "KB", "MB",
+                                                                                                     "GB", "TB", "PB"]
     for idx, word in enumerate(scale[::-1]):
         power = 1024 ** (len(scale) - idx - 1)
         if num_bytes >= power:
@@ -131,8 +137,8 @@ def human_readable_size(num_bytes: int) -> Tuple[float, str]:
     return num_bytes, scale[0]
 
 
-def human_readable_size_str(num_bytes: int) -> str:
-    t = human_readable_size(num_bytes)
+def human_readable_size_str(num_bytes: int, long=True) -> str:
+    t = human_readable_size(num_bytes, long)
     return f"{t[0]} {t[1]}"
 
 
@@ -151,15 +157,54 @@ async def is_link_alive(url, timeout=10):
         return False
 
 
-async def async_md5(filepath, bufsize=1024 ** 2):
-    md5 = hashlib.md5()
+async def async_hash(filepath, hashfunc: callable = hashlib.md5, bufsize=1024 ** 2) -> str:
+    hashis = hashfunc()
     async with aiofiles.open(filepath, "rb") as f:
         while True:
             chunk = await f.read(bufsize)
-            if not chunk:
-                break
-            md5.update(chunk)
-    return md5.hexdigest()
+            if not chunk: break
+            hashis.update(chunk)
+    return hashis.hexdigest()
+
+
+async def async_multihash(filepath, hashfuncs: list[callable], bufsize=1024 ** 2) -> dict[str, str]:
+    """
+    Compute mulitple hashes at once, more efficient than calling async_hash multiple times.
+    await asyicio.to_thread(...)
+    """
+    hashiss = [hashfunc() for hashfunc in hashfuncs]
+    async with aiofiles.open(filepath, "rb") as f:
+        while True:
+            chunk = await f.read(bufsize)
+            if not chunk: break
+            for i in hashiss: i.update(chunk)
+    return {i.name: i.hexdigest() for i in hashiss}
+
+
+def sync_multihash(filepath: str, hashfuncs: list[callable]) -> dict[str, str]:
+    """
+    Synchronously load the entire file into memory, then compute multiple hashes in parallel, one per thread.
+    Requires a lot of memory significantly faster than aysnc mulithash.
+    """
+    with open(filepath, "rb") as f:
+        data = f.read()
+    print("Yes")
+
+    results = {};
+    threads = []
+
+    def compute_hash(hashfunc):
+        h = hashfunc()
+        h.update(data)
+        results[h.name] = h.hexdigest()
+
+    for hashfunc in hashfuncs:
+        t = threading.Thread(target=compute_hash, args=(hashfunc,))
+        threads.append(t)
+        t.start()
+
+    for t in threads: t.join()
+    return results
 
 
 def is_console_interactive() -> bool:
@@ -181,20 +226,83 @@ class AsyncCounter:
             self.value -= 1
             return self.value
 
+    async def set(self, new_val):
+        async with self._lock:
+            self.value = new_val
+            return self.value
+
     async def reset(self):
         async with self._lock:
             self.value = 0
             return self.value
 
+    def get_value(self):
+        return self.value
 
 
-async def main() :
-    print(find_free_port())
-    print(human_readable_size(99999999999999999999))
-    print(is_console_interactive())
-    cnter = AsyncCounter()
-    await cnter.increment()
-    print(cnter.value)
+def count_active_coroutines() -> int:
+    """
+    Returns the number of coroutine objects currently tracked by the garbage collector.
+    """
+    return sum(1 for obj in gc.get_objects() if isinstance(obj, types.CoroutineType))
+
+
+def get_memory_usage() -> int:
+    """
+    Returns the maximum resident set size used in bytes
+    Works for macos and unix
+    """
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    mem_bytes = usage.ru_maxrss
+    # On macOS, ru_maxrss is in bytes; on Linux, it's in kilobytes
+    if sys.platform != "darwin":
+        mem_bytes = mem_bytes * 1024
+    return mem_bytes
+
+
+async def run_with_shutdown(c: Coroutine, e: asyncio.Event) -> any:
+    """
+    Return when e is set.
+    If e is never set, behaves like that coroutine
+    """
+
+    coroutine_task = asyncio.create_task(c)
+    shutdown_task = asyncio.create_task(e.wait())
+
+    done, pending = await asyncio.wait({coroutine_task, shutdown_task}, return_when=asyncio.FIRST_COMPLETED)
+    for task in pending: task.cancel(); return
+    for task in done: shutdown_task.cancel(); return task.result()
+
+
+def text_to_html_code_block(text: str) -> str:
+    escaped_text = html.escape(text)
+    return f"<pre><code>{escaped_text}</code></pre>"
+
+
+async def main():
+    # Generate a dummy 5 GB file if it doesn't exist
+    dummy_path = proj_path("dummy_5gb.bin")
+    size_bytes = 5 * 1024 ** 3  # 5 GB
+
+    if not os.path.exists(dummy_path) or os.path.getsize(dummy_path) != size_bytes:
+        print("Creating 5GB dummy file...")
+        with open(dummy_path, "wb") as f:
+            # Writing zeros, but you can change the data as needed
+            f.seek(size_bytes - 1)
+            f.write(b'\0')
+        print("Dummy file created.")
+
+    import time
+    hashfuncs = [hashlib.md5, hashlib.sha1, hashlib.sha256, hashlib.sha512, hashlib.blake2b]
+
+    print("Hashing 5GB file asynchronously...")
+    t_start = time.time()
+    # r = await async_multihash(dummy_path, hashfuncs)
+    r = sync_multihash(dummy_path, hashfuncs)
+    t_end = time.time()
+    print("Hashes:", r)
+    print(f"Async hash took {t_end - t_start:.2f} seconds")
+
 
 if __name__ == "__main__":
-    asyncio.run(main() )
+    asyncio.run(main())

@@ -48,10 +48,6 @@ class AsyncChunkDownloader:
         self._support_range = False  # filled by fetch matadata
         self._filename = None  # filled by fetch matadata
 
-    def status(self):
-        return {"state": self._state, "total_bytes": self._total_bytes, "support_range": self._support_range,
-                "filename": self._filename, "bytes_downloaded": self._bytes_downloaded}
-
     async def download(self) -> str:
         """
         start downloading, returns final filepath if completed
@@ -70,27 +66,32 @@ class AsyncChunkDownloader:
             return final_path
 
         self._state = "downloading"
-        if not self._support_range or self._total_bytes <= 1024:
+        if not self._support_range or self._total_bytes <= 1024:  # basic downloading
             _logger.warning(f"File {self._filename} does not support multipart downloading or is too small.")
+            _logger.info(f"Downloading {self._filename} with one chunk, total size "
+                         f"{utils.human_readable_size_str(self._total_bytes)} ")
             self._num_chunks = 1
-        chunks = self._divide_into_chunks()
+            final_path = await self._basic_download()
+            return final_path
+        else:  # chunked downloading
+            chunks = self._divide_into_chunks()
+            _logger.info(f"Downloading {self._filename} with {self._num_chunks} chunks,"
+                         f" total size {utils.human_readable_size_str(self._total_bytes)} ")
 
-        _logger.info(f"Downloading {self._filename} with {self._num_chunks} chunks,"
-                     f" total size {utils.human_readable_size_str(self._total_bytes)} ")
+            download_tasks = [self._chunk_download(start, end, idx) for idx, (start, end) in enumerate(chunks)]
+            chunk_filelist = await asyncio.gather(*download_tasks)
+            chunk_total_size = sum(os.path.getsize(f) for f in chunk_filelist)
+            if chunk_total_size != self._total_bytes:
+                for f in chunk_filelist:
+                    if os.path.exists(f): os.remove(f)
+                _logger.error(f"Error. Expect {chunk_total_size} bytes, "
+                              f"got {chunk_total_size} bytes")
 
-        download_tasks = [self._download_chunk(start, end, idx) for idx, (start, end) in enumerate(chunks)]
-        chunk_filelist = await asyncio.gather(*download_tasks)
-        if self._bytes_downloaded != self._total_bytes:
-            for f in chunk_filelist:
-                os.remove(f)
-            _logger.error(f"Error. Expect {self._bytes_downloaded} bytes, "
-                          f"got {self._bytes_downloaded} bytes")
+            final_path = await asyncio.to_thread(self._merge_chunks, chunk_filelist)
+            self._state = "done"
+            _logger.info(f"Done with {final_path}")
 
-        final_path = await asyncio.to_thread(self._merge_chunks, chunk_filelist)
-        self._state = "done"
-        _logger.info(f"Done with {final_path}")
-
-        return final_path
+            return final_path
 
     async def _is_url_supports_range(self, url) -> bool:
         async with self._session.head(url, proxy=self._proxy) as resp:
@@ -177,8 +178,8 @@ class AsyncChunkDownloader:
             except Exception as e:
                 _logger.warning(f"Download error: {str(e)}, try again.")
         else:
-            os.remove(final_filepath)  # clean up if failed
-            utils.log_error_and_raise(f"Failed to download {final_filepath}")
+            if os.path.exists(final_filepath): os.remove(final_filepath)  # clean up if failed
+            utils.log_error_and_raise(_logger, f"Failed to download {final_filepath}")
             return None
 
     async def _chunk_download(self, start: int, end: int, part_index: int, attempts=3) -> str | None:
@@ -201,6 +202,18 @@ class AsyncChunkDownloader:
         while cons_fail < attempts:
             try:
                 current_start = start + chunk_bytes_downloaded
+                headers = {"Range": f"bytes={current_start}-{end - 1}"}
+
+                async with self._session.get(self._url, headers=headers, proxy=self._proxy) as resp:
+                    if resp.status not in (200, 206):
+                        raise Exception(f"Chunk download failed with status {resp.status}, headers: {headers}")
+
+                    async with aiofiles.open(chunk_filepath, "ab") as f:
+                        async for chunk in resp.content.iter_chunked(n=1024 * 64):
+                            await f.write(chunk)
+                            chunk_bytes_downloaded += len(chunk)
+                            AsyncChunkDownloader.global_bytes_downloaded += len(chunk)
+                break
             except Exception as e:
                 last_exception = e
                 if chunk_bytes_last_downloaded == chunk_bytes_downloaded:
@@ -209,10 +222,19 @@ class AsyncChunkDownloader:
                     cons_fail = 0
                     chunk_bytes_last_downloaded = chunk_bytes_downloaded
         else:
-            os.remove(chunk_filepath)  # clean up if failed
+            if os.path.exists(chunk_filepath): os.remove(chunk_filepath)  # clean up if failed
             utils.log_error_and_raise(_logger,
-                                      f"Failed to download part {part_index} from {self._url}, last exception : {last_exception}")
+                                      f"Failed to download part {part_index} from {self._url}, last exception : "
+                                      f"{last_exception}")
             return None
+
+        if chunk_bytes_downloaded != end - start:
+            utils.log_error_and_raise(_logger, f"Chunk download failed. "
+                                               f"Expect {end - start} bytes, got {chunk_bytes_downloaded} "
+                                               f"bytes")
+        _logger.debug(f"Chunk {part_index} downloaded to {chunk_filepath}, "
+                      f"size {utils.human_readable_size_str(chunk_bytes_downloaded)}")
+        return chunk_filepath
 
     async def _download_chunk(self, start: int, end: int, part_index: int, attempts=3) -> str | None:
         """
@@ -234,7 +256,6 @@ class AsyncChunkDownloader:
                     async with aiofiles.open(chunk_filepath, "wb") as f:
                         async for chunk in resp.content.iter_chunked(n=1024 * 64):
                             await f.write(chunk)
-                            self._bytes_downloaded += len(chunk)
                             chunk_bytes_downloaded += len(chunk)
                             AsyncChunkDownloader.global_bytes_downloaded += len(chunk)
 
@@ -248,7 +269,7 @@ class AsyncChunkDownloader:
             except Exception as e:
                 _logger.warning(f"{self._filename} part {part_index} failed with error '{e}'")
         else:
-            os.remove(chunk_filepath)  # clean up if failed
+            if os.path.exists(chunk_filepath): os.remove(chunk_filepath)  # clean up if failed
             utils.log_error_and_raise(_logger, f"Failed to download part {part_index} from {self._url}")
             return None
 

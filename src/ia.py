@@ -62,46 +62,33 @@ class IAClient:
         async with self._session.get(url, proxy=self._proxy) as resp:
             if resp.status == 200:
                 return await resp.json()
-            utils.log_error_and_raise(
-                _logger, f"Get metadata of {bucket} failed with status {resp.status}")
+            utils.log_error_and_raise(_logger, f"Get metadata of {bucket} failed with status {resp.status}")
             return None
 
-    async def create_bucket(
-            self,
-            bucket: str,
-            filepaths: list[str],  # for simplicity sake, filename is same as local fliename
-            meta_mediatype: str,
-            meta_title: str,
-            meta_description: str,
-            meta_collection: str,  # test_collection if to be deleted in 30 days
+    async def create_bucket(self, bucket: str, filepaths: list[str],
+            # for simplicity sake, filename is same as local fliename
+            meta_mediatype: str, meta_title: str, meta_description: str, meta_collection: str,
+            # test_collection if to be deleted in 30 days
             custom_metadata: dict = None,  # metadata otherthan those required as params
-            option_keep_old_version=False,
-            option_delete_derived_files=True,
-            option_skip_derive_process=False,
-    ):
-
+            option_keep_old_version=False, option_delete_derived_files=True, option_skip_derive_process=False, ):
         # metadata and headers
-        accepte_mediatypes = ["texts", "etree", "audio", "movies",
-                              "software", "image", "data", "web"]
+        accepte_mediatypes = ["texts", "etree", "audio", "movies", "software", "image", "data", "web"]
         if meta_mediatype not in accepte_mediatypes:
             utils.log_error_and_raise(_logger, f"{meta_mediatype} not in {accepte_mediatypes}")
-        if not (5 <= len(bucket) <= 100
-                and re.fullmatch(r'[A-Za-z0-9._-]+', bucket)
-                and (bucket[0].isalpha() or bucket.isnumeric())
-        ):
+        if not (5 <= len(bucket) <= 100 and re.fullmatch(r'[A-Za-z0-9._-]+', bucket) and (
+                bucket[0].isalpha() or bucket.isnumeric())):
             utils.log_error_and_raise(_logger, f"Invalid identifier {bucket}")
 
         required_metadata = {
-            "identifier" : bucket,
-            "mediatype" : meta_mediatype,
-            "title" : meta_title,
-            "description" : meta_description,
-            "collection" : meta_collection
-        }
-        for k, v in custom_metadata.items() :
+            "identifier": bucket,
+            "mediatype": meta_mediatype,
+            "title": meta_title,
+            "description": meta_description,
+            "collection": meta_collection}
+        for k, v in custom_metadata.items():
             if k in required_metadata:
                 if v != required_metadata[k]:
-                    _logger.error(  f"parameter[{k}] = {required_metadata[k]}, custom[{k}] = {v}")
+                    _logger.error(f"parameter[{k}] = {required_metadata[k]}, custom[{k}] = {v}")
                     utils.log_error_and_raise(_logger, "Discrepancy between parameter and custom metadata.")
                 else:
                     del custom_metadata[k]
@@ -120,12 +107,14 @@ class IAClient:
             "x-amz-auto-make-bucket": "1",
             "x-archive-size-hint": total_bytes,
             "x-archive-interactive-priority": 1,
-            "authorization": f"LOW {self._access_key}:{self._secret_key}"
-        }
+            "authorization": f"LOW {self._access_key}:{self._secret_key}"}
 
-        option_keep_old_version and headers.update({"x-archive-keep-old-version": 1})
-        option_delete_derived_files and headers.update({"x-archive-cascade-delete": 1})
-        option_skip_derive_process and headers.update({"x-archive-queue-derive": 1})
+        option_keep_old_version and headers.update({
+                                                       "x-archive-keep-old-version": 1})
+        option_delete_derived_files and headers.update({
+                                                           "x-archive-cascade-delete": 1})
+        option_skip_derive_process and headers.update({
+                                                          "x-archive-queue-derive": 1})
 
         if custom_metadata:
             for key, value in custom_metadata.items():
@@ -143,10 +132,8 @@ class IAClient:
         # use a smallest flie to init the bucket, then upload in parallel
         smallest_file = min(filepaths, key=lambda f: os.path.getsize(f))
         await self.upload_file(bucket, smallest_file, headers)  # upload first to create the bucket
-        await asyncio.gather(*(
-            self.upload_file(bucket, filepath)
-            for filepath in filepaths if filepath != smallest_file
-        ))
+        await asyncio.gather(*(self.upload_file(bucket, filepath) for filepath in filepaths if
+        filepath != smallest_file))
 
         _logger.info(f"Uploaded {len(filepaths)} files to internet archive.")
 
@@ -159,8 +146,7 @@ class IAClient:
             headers = {
                 "x-amz-auto-make-bucket": "1",
                 "x-archive-interactive-priority": "1",
-                "authorization": f"LOW {self._access_key}:{self._secret_key}"
-            }
+                "authorization": f"LOW {self._access_key}:{self._secret_key}"}
         headers["Content-Length"] = str(os.path.getsize(filepath))
 
         async def file_chunker(path, chunk_size=1024 ** 2):
@@ -175,9 +161,10 @@ class IAClient:
         for _ in range(attempts):
             try:
                 async with self._connection_semaphore:
-                    async with self._session.put(
-                            url, headers=headers, data=file_chunker(filepath), proxy=self._proxy
-                    ) as resp:
+                    async with self._session.put(url,
+                            headers=headers,
+                            data=file_chunker(filepath),
+                            proxy=self._proxy) as resp:
                         if resp.status >= 400:
                             raise Exception("Bad status code ")
                         _logger.info(f"Successfully uploaded {filepath}.")
@@ -187,12 +174,10 @@ class IAClient:
                 _logger.warning(resp.text)
                 _logger.warning("Retrying.")
         else:
-            utils.log_error_and_raise(
-                _logger, f"Upload {filepath} failed after {attempts} attempts.")
+            utils.log_error_and_raise(_logger, f"Upload {filepath} failed after {attempts} attempts.")
             return None
 
-    async def download_file(
-            self,
+    async def download_file(self,
             bucket: str,
             filename: str,
             output_dir: str,
@@ -205,8 +190,8 @@ class IAClient:
             os.makedirs(output_dir)
         filepath = os.path.join(output_dir, filename)
 
-        url = f"https://s3.us.archive.org/{bucket}/{filename}" if not fast_get \
-            else f"https://archive.org/download/{bucket}/{filename}"
+        url = f"https://s3.us.archive.org/{bucket}/{filename}" if not fast_get else (f"https://archive.org/download/"
+                                                                                     f"{bucket}/{filename}")
 
         for _ in range(attempts):
             try:
@@ -220,8 +205,7 @@ class IAClient:
             except Exception as e:
                 _logger.warning(f"Download {bucket}/{filename} failed: {e}, retrying.")
         else:
-            utils.log_error_and_raise(
-                _logger, f"Download {bucket}/{filename} failed after {attempts} attempts.")
+            utils.log_error_and_raise(_logger, f"Download {bucket}/{filename} failed after {attempts} attempts.")
             os.remove(filepath)
             return None
 
@@ -247,8 +231,7 @@ class IAClient:
         async with self._session.get(url, proxy=self._proxy) as resp:
             if resp.status == 200:
                 return await resp.json()
-            utils.log_error_and_raise(
-                _logger, f"Check limits failed with status {resp.status}")
+            utils.log_error_and_raise(_logger, f"Check limits failed with status {resp.status}")
             return None
 
     async def verify_bucket(self,
@@ -272,9 +255,7 @@ class IAClient:
             filepaths = [item[0] for item in md5_items]
             files_local_hash = [item[1] for item in md5_items]
         else:
-            files_local_hash = await asyncio.gather(*(
-                utils.async_md5(filepath) for filepath in filepaths
-            ))
+            files_local_hash = await asyncio.gather(*(utils.async_hash(filepath) for filepath in filepaths))
 
         _logger.info(f"Verifying bucket {bucket}, wait up to {timeout} seconds.")
         start_time = asyncio.get_running_loop().time()
@@ -282,10 +263,8 @@ class IAClient:
             info = await self.get_info(bucket)
             try:
                 files_bucket_hash = [d["md5"] for d in info["files"]]
-                result = [
-                    filepaths[idx] for idx, local_hash in enumerate(files_local_hash)
-                    if local_hash not in files_bucket_hash
-                ]
+                result = [filepaths[idx] for idx, local_hash in enumerate(files_local_hash) if
+                    local_hash not in files_bucket_hash]
 
                 if result == [] or (result != [] and info['pending_tasks'] == False):
                     return result
@@ -309,11 +288,7 @@ class IAClient:
 
 async def main():
     config = utils.read_config()
-    async with  IAClient(
-            access_key=config["ia"]["s3_access_key"],
-            secret_key=config["ia"]["s3_secret_key"]
-    ) as client:
-
+    async with  IAClient(access_key=config["ia"]["s3_access_key"], secret_key=config["ia"]["s3_secret_key"]) as client:
         bucket = ''.join(random.choices(string.ascii_letters, k=16))
         print(bucket)
 
@@ -329,8 +304,7 @@ async def main():
             if os.path.isfile(filepath):
                 filepaths.append(filepath)
         #
-        await client.create_bucket(
-            bucket=bucket,
+        await client.create_bucket(bucket=bucket,
             filepaths=filepaths,
             meta_mediatype="data",
             meta_title=filename,
@@ -338,9 +312,7 @@ async def main():
             meta_collection="test_collection",
             custom_metadata={
                 "Hello": "world",
-                "multitag": ["A", "B"]
-            },
-        )
+                "multitag": ["A", "B"]}, )
 
         info = await client.get_info(bucket)
         pprint(info)
