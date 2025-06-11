@@ -43,7 +43,7 @@ ctrl_c_counter = 0
 
 # TextUI setup
 
-indicator_column = VarTextColumn("Running", "black")
+indicator_column = VarTextColumn("Running", "green")
 verified_column = CounterColumn(
     complete_counter.get_value, label="✔", color="bright_green"
 )
@@ -268,22 +268,30 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                 + "<br><hr>"
             )
         custom_metadata = task["meta"] | {
-            "checksum_" + k: v for k, v in main_checksum_d.items()
+            "checksum-" + k: v for k, v in main_checksum_d.items()
         }
         custom_metadata["description"] = description
 
         # uploading
 
-        _logger.info(f"Start uploading to IA.")
+        _logger.info("Start uploading to IA.")
         async with IAClient(
             config["ia"]["s3_access_key"],
             config["ia"]["s3_secret_key"],
             https_proxy=https_proxy,
         ) as ia:
             bucket_name = config["ia"]["bucket_prefix"] + main_filename
-            if await ia.head_bucket(bucket_name):
-                _logger.warning(
-                    f"Bucket {bucket_name} already exists, skipping upload."
+            try:
+                if await ia.head_bucket(bucket_name):
+                    _logger.warning(
+                        f"Bucket {
+                            bucket_name} already exists, skipping upload."
+                    )
+                    continue
+            except Exception as e:
+                _logger.error(
+                    f"Exception '{
+                        e}' happens when trying to head bucket, skip."
                 )
                 continue
 
@@ -508,6 +516,7 @@ async def main():
         task_limit = config["global"]["num_tasks"]
         if task_limit == -1:
             task_limit = 1145141919810
+
         while fail_counter.value < 20:  # hardcoded for now
             await asyncio.sleep(1)
             if not await portal.is_loggedin():  # login and refresh download list
@@ -547,10 +556,13 @@ async def main():
                 if verification_idle:
                     break
                 else:
-                    _logger.info(
-                        "No meta to download or reached task limit, waiting for verification to finish."
-                    )
-                    await asyncio.sleep(120)
+                    if "last_message_time" not in locals():
+                        last_message_time = -1
+                    if asyncio.get_event_loop().time() - last_message_time > 120:
+                        _logger.info(
+                            "No meta to download or reached task limit, waiting for verification to finish."
+                        )
+                        last_message_time = asyncio.get_event_loop().time()
                     continue
 
             meta_to_queue = random.choices(

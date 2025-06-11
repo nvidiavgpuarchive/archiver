@@ -37,6 +37,8 @@ class IAClient:
 
     Mulitpart is definitely possible, but since there's a concurrency limit (12 currently),
     Enable mulitpart means me can't have concurrent upload tasks which is a waste imo
+
+    All operations in the class is stateless.
     """
 
     _semaphore_cache = {}
@@ -68,15 +70,16 @@ class IAClient:
         filelist in resp['files']
         """
         url = f"https://archive.org/metadata/{bucket}"
-        async with aiohttp.ClientSession().get(url, proxy=self._proxy) as resp:
-            if resp.status == 200:
-                return await resp.json()
-            utils.log_error_and_raise(
-                _logger,
-                f"Get metadata of '{
-                    bucket}' failed with status {resp.status}",
-            )
-            return None
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, proxy=self._proxy) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                utils.log_error_and_raise(
+                    _logger,
+                    f"Get metadata of '{
+                        bucket}' failed with status {resp.status}",
+                )
+                return None
 
     async def create_bucket(
         self,
@@ -89,6 +92,7 @@ class IAClient:
         meta_collection: str,
         # test_collection if to be deleted in 30 days
         custom_metadata: dict = None,  # metadata otherthan those required as params
+        # custom metadata cannot contain _, use - instead
         option_keep_old_version=False,
         option_delete_derived_files=True,
         option_skip_derive_process=False,
@@ -222,29 +226,30 @@ class IAClient:
         for _ in range(attempts):
             try:
                 async with self._connection_semaphore:
-                    async with aiohttp.ClientSession().put(
-                        url,
-                        headers=headers,
-                        data=file_chunker(filepath),
-                        proxy=self._proxy,
-                    ) as resp:
-                        last_resptext = await resp.text()
-                        if resp.status >= 400:
-                            raise Exception("Bad status code ")
-                        _logger.info(f"Successfully uploaded '{filepath}'.")
-                        return
+                    async with aiohttp.ClientSession() as session:
+                        async with session.put(
+                            url,
+                            headers=headers,
+                            data=file_chunker(filepath),
+                            proxy=self._proxy,
+                        ) as resp:
+                            last_resptext = await resp.text()
+                            if resp.status >= 400:
+                                raise Exception("Bad status code ")
+                            _logger.info(f"Successfully uploaded '{filepath}'.")
+                return
             except Exception as e:
                 last_exception = e
-                _logger.warning(
+                _logger.debug(
                     f"Upload '{filepath}' failed with exception '{
-                        e}' and message '{last_resptext}'"
+                        str(e)}' and message '{last_resptext}', retrying."
                 )
-                _logger.warning("Retrying.")
+                await asyncio.sleep(attempts * 2)
         else:
             utils.log_error_and_raise(
                 _logger,
                 f"Upload '{filepath}' failed after {
-                    attempts} attempts.",
+                    attempts} attempts, last exception {last_exception}, last message {last_resptext}",
             )
             return None
 
@@ -266,13 +271,14 @@ class IAClient:
 
         for _ in range(attempts):
             try:
-                async with aiohttp.ClientSession().get(url, proxy=self._proxy) as resp:
-                    if resp.status >= 400:
-                        raise Exception("Bad status code.")
-                    async with aiofiles.open(filepath, "wb") as f:
-                        async for chunk in resp.content.iter_chunked(n=1024 * 64):
-                            await f.write(chunk)
-                    return filepath
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, proxy=self._proxy) as resp:
+                        if resp.status >= 400:
+                            raise Exception("Bad status code.")
+                        async with aiofiles.open(filepath, "wb") as f:
+                            async for chunk in resp.content.iter_chunked(n=1024 * 64):
+                                await f.write(chunk)
+                        return filepath
             except Exception as e:
                 _logger.warning(
                     f"Download '{bucket}/{filename}' failed: '{e}', retrying."
@@ -286,15 +292,28 @@ class IAClient:
             os.remove(filepath)
             return None
 
-    async def head_bucket(self, bucket: str) -> bool:
+    async def head_bucket(self, bucket: str, attempts=3) -> bool:
         """
         Check if bucket exists.
         """
-        url = f"https://s3.us.archive.org/{bucket}/"
-        async with aiohttp.ClientSession().head(url, proxy=self._proxy) as resp:
-            if resp.status == 404:
-                return False
-            return True
+        last_exception = None
+        for _ in range(attempts):
+            try:
+                url = f"https://s3.us.archive.org/{bucket}/"
+                async with aiohttp.ClientSession() as session:
+                    async with session.head(url, proxy=self._proxy) as resp:
+                        if resp.status == 404:
+                            return False
+                        return True
+            except Exception as e:
+                last_exception = e
+                continue
+        else:
+            utils.log_error_and_raise(
+                _logger,
+                f"Head bucket '{bucket}' encountered error '{
+                    str(last_exception)}'",
+            )
 
     async def check_limits(self, bucket: str) -> dict | None:
         """
@@ -307,13 +326,14 @@ class IAClient:
             f"https://s3.us.archive.org/?check_limit=1&"
             f"accesskey={self._access_key}&bucket={bucket}"
         )
-        async with aiohttp.ClientSession().get(url, proxy=self._proxy) as resp:
-            if resp.status == 200:
-                return await resp.json()
-            utils.log_error_and_raise(
-                _logger, f"Check limits failed with status {resp.status}"
-            )
-            return None
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, proxy=self._proxy) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                utils.log_error_and_raise(
+                    _logger, f"Check limits failed with status {resp.status}"
+                )
+                return None
 
     async def verify_bucket(
         self,
@@ -328,8 +348,6 @@ class IAClient:
 
         Will use md5_dict if provided, otherwise will calculate md5 for each file in filepaths.
         """
-        if any(not os.path.exists(filepath) for filepath in filepaths):
-            utils.log_error_and_raise(_logger, "Some filepaths do not exist.")
         if not filepaths and not md5_dict:
             utils.log_error_and_raise(_logger, "No filepaths or md5_dict provided.")
 
@@ -342,7 +360,7 @@ class IAClient:
                 *(utils.async_hash(filepath) for filepath in filepaths)
             )
 
-        _logger.info(
+        _logger.debug(
             f"Verifying bucket {
                 bucket}, wait up to {timeout} seconds."
         )
@@ -364,12 +382,10 @@ class IAClient:
                 _logger.debug(info)
             await asyncio.sleep(10)
         else:
-            utils.log_error_and_raise(
-                _logger,
-                f"Bucket '{bucket}' not ready after {
-                    timeout} seconds.",
-            )
-            return filepaths
+            msg = f"Bucket '{bucket}' not ready after {
+                timeout} seconds."
+            _logger.debug(msg)
+            raise Exception(msg)
 
     async def close(self):
         pass

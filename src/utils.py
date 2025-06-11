@@ -3,6 +3,7 @@ import asyncio
 import gc
 import hashlib
 import html
+import inspect
 import logging
 import os
 import re
@@ -95,7 +96,8 @@ def run_async_blocking(awaitable_func, *args, **kwargs):
         loop.close()
     else:
         # If we're in a running loop, use run_coroutine_threadsafe
-        f = asyncio.run_coroutine_threadsafe(awaitable_func(*args, **kwargs), loop)
+        f = asyncio.run_coroutine_threadsafe(
+            awaitable_func(*args, **kwargs), loop)
         f.result()
 
 
@@ -313,7 +315,16 @@ def text_to_html_code_block(text: str) -> str:
     return f"<pre><code>{escaped_text}</code></pre>"
 
 
+def where_am_i():
+    frame = inspect.currentframe().f_back
+    filename = frame.f_code.co_filename
+    line_number = frame.f_lineno
+    return (filename, line_number)
+
+
 async def main():
+    where_am_i()
+    return
     # Generate a dummy 5 GB file if it doesn't exist
     dummy_path = proj_path("dummy_5gb.bin")
     size_bytes = 5 * 1024**3  # 5 GB

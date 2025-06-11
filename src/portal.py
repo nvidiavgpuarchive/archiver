@@ -165,11 +165,13 @@ class NvidiaWebPortal:
             )
             or ":" not in self._https_proxy
         ):
-            _logger.error("https proxy must in format 'http(s)://<host>:<port>'")
+            _logger.error(
+                "https proxy must in format 'http(s)://<host>:<port>'")
             utils.log_error_and_raise(
                 _logger, f"Invalid proxy format {self._https_proxy}"
             )
-        proxy_options = None if not self._https_proxy else {"server": self._https_proxy}
+        proxy_options = None if not self._https_proxy else {
+            "server": self._https_proxy}
 
         async with async_playwright() as p:
             if self._remote_playwright_link:
@@ -215,7 +217,8 @@ class NvidiaWebPortal:
                 try:
                     tag = await utils.playwright_wait_for_any(page, urls, timeout=30)
                 except Exception:
-                    utils.log_error_and_raise(_logger, "Timeout on last step of login.")
+                    utils.log_error_and_raise(
+                        _logger, "Timeout on last step of login.")
 
                 if tag == "success":
                     try:
@@ -232,7 +235,8 @@ class NvidiaWebPortal:
                     try:
                         link = await self._wait_for_verification_link()
                     except Exception:
-                        _logger.warning("Email verification timeout. Try again anyway.")
+                        _logger.warning(
+                            "Email verification timeout. Try again anyway.")
                         continue
 
                     page2 = await context.new_page()
@@ -255,7 +259,8 @@ class NvidiaWebPortal:
                 ]["entitlementProductKeys"][0]["entitlementFeatures"][0]["endDate"]
                 _logger.info("Current subscription ends at %s", sub_end_date)
             except (KeyError, IndexError):
-                _logger.warning("Cannot get virtual groups entitlements ending date.")
+                _logger.warning(
+                    "Cannot get virtual groups entitlements ending date.")
 
             if debug:
                 input("Press Enter to continue...")
@@ -284,7 +289,8 @@ class NvidiaWebPortal:
                 await self._gmail_client.get_mail(eid, mailbox)
                 for mailbox, eid in eid_tuples
             ]
-            mail_data_list.sort(key=lambda x: x["time"], reverse=True)  # newest first
+            mail_data_list.sort(
+                key=lambda x: x["time"], reverse=True)  # newest first
 
             for mail_data in mail_data_list:
                 if mail_data["time"] < start_time - 60:
