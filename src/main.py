@@ -186,6 +186,12 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
             )
             continue
 
+        # check if all files exist first
+        if utils.check_files_exist(filepath_list):
+            utils.remove_files(filepath_list)
+            _logger.error("Some file download failed, skip the task.")
+            continue
+
         # hashing, crc check,  verify
         _logger.info(f"Generate checksum for '{main_filename}'")
 

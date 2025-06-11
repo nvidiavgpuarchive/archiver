@@ -3,6 +3,8 @@ import os
 
 from rich.logging import RichHandler  # Raises ImportError if not installed
 
+import utils
+
 
 def get_logger(name=None) -> logging.Logger:
     """
@@ -19,16 +21,24 @@ def get_logger(name=None) -> logging.Logger:
         format_pattern = "[%(name)s] \t %(message)s"
         formatter = logging.Formatter(format_pattern)
 
-        handler = RichHandler(
+        console_handler = RichHandler(
             show_time=True,
             show_level=True,
             show_path=False,
             rich_tracebacks=True,
             log_time_format="[%X]",
         )
-        handler.setFormatter(formatter)
-        handler.setLevel(log_level)
-        logger.addHandler(handler)
+        console_handler.setFormatter(formatter)
+        console_handler.setLevel(log_level)
+        logger.addHandler(console_handler)
+
+        file_handler = logging.FileHandler(utils.proj_path("config/lastlog.txt"))
+        file_handler.setFormatter(
+            logging.Formatter("[%(asctime)s][%(levelname)s][%(name)s] %(message)s")
+        )
+        file_handler.setLevel(logging.INFO)
+        logger.addHandler(file_handler)
+
         logger.propagate = False
         logger.debug(f"Logger for '{name}' initialized with RichHandler.")
 

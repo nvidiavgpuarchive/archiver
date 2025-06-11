@@ -96,8 +96,7 @@ def run_async_blocking(awaitable_func, *args, **kwargs):
         loop.close()
     else:
         # If we're in a running loop, use run_coroutine_threadsafe
-        f = asyncio.run_coroutine_threadsafe(
-            awaitable_func(*args, **kwargs), loop)
+        f = asyncio.run_coroutine_threadsafe(awaitable_func(*args, **kwargs), loop)
         f.result()
 
 
@@ -313,6 +312,33 @@ async def run_with_shutdown(c: Coroutine, e: asyncio.Event) -> any:
 def text_to_html_code_block(text: str) -> str:
     escaped_text = html.escape(text)
     return f"<pre><code>{escaped_text}</code></pre>"
+
+
+def check_files_exist(filepaths: list[str]) -> list[str]:
+    """
+    Accepts a list of absolute filepaths, return a list of str
+    of files that doesn't exist in the file system
+    """
+    non_exist = []
+    for fp in filepaths:
+        if not os.path.exists(fp):
+            non_exist.append(fp)
+    return non_exist
+
+
+def remove_files(filepaths: list[str]) -> list[str]:
+    """
+    Remove files in the list, will just continue if files non exist
+    Returns a list of files successfully removed
+    """
+    rmed = []
+    for fp in filepaths:
+        try:
+            os.remove(fp)
+            rmed.append(fp)
+        except:
+            continue
+    return rmed
 
 
 def where_am_i():

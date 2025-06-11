@@ -105,7 +105,7 @@ class AsyncChunkDownloader:
 
             final_path = await asyncio.to_thread(self._merge_chunks, chunk_filelist)
             self._state = "done"
-            _logger.info(f"Done with {final_path}")
+            _logger.info(f"Done with '{final_path}'")
 
             return final_path
 
@@ -172,8 +172,7 @@ class AsyncChunkDownloader:
 
                         # get filename if avail
                         filename = None
-                        content_disp = resp.headers.get(
-                            "Content-Disposition", "")
+                        content_disp = resp.headers.get("Content-Disposition", "")
                         if "filename" in content_disp:
                             match = re.search(
                                 r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';]+)',
@@ -248,8 +247,7 @@ class AsyncChunkDownloader:
         else:
             if os.path.exists(final_filepath):
                 os.remove(final_filepath)  # clean up if failed
-            utils.log_error_and_raise(
-                _logger, f"Failed to download {final_filepath}")
+            utils.log_error_and_raise(_logger, f"Failed to download {final_filepath}")
             return None
 
     async def _chunk_download(

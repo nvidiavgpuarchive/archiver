@@ -367,6 +367,9 @@ class IAClient:
         start_time = asyncio.get_running_loop().time()
         while asyncio.get_running_loop().time() - start_time < timeout:
             info = await self.get_info(bucket)
+            # from rich.pretty import pprint
+
+            # pprint(info)
             try:
                 files_bucket_hash = [d["md5"] for d in info["files"]]
                 result = [
@@ -375,7 +378,10 @@ class IAClient:
                     if local_hash not in files_bucket_hash
                 ]
 
-                if result == [] or (result != [] and info["pending_tasks"] == False):
+                if result == [] or (
+                    result != []
+                    and ("pending_tasks" not in info or info["pending_tasks"] == False)
+                ):
                     return result
             except KeyError:
                 _logger.debug("Pending tasks not found in info.")
