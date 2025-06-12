@@ -140,207 +140,201 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
             idle_workers[worker_id] = True
             continue
         except Exception as e:
-            _logger.error(f"Encountered error: '{e}'")
+            _logger.exception(f"An error occured.")
             idle_workers[worker_id] = False
             continue
 
-        # download
-        if not await utils.is_link_alive(task["download"]["url"]):
-            _logger.info(f"Download link expired, skipping. ")
-            continue
-
-        download_dir = config["global"]["download_dir"]
-        https_proxy = config["global"]["https_proxy"]
-        num_chunks = config["downloader"]["num_chunks"]
-
-        filepath_list = []
         try:
-            async with AsyncChunkDownloader(
-                task["download"]["url"],
-                download_dir,
-                num_chunks=num_chunks,
-                proxy=https_proxy,
-            ) as downloader:
-                main_filepath = await utils.run_with_shutdown(
-                    downloader.download(), shutdown_event
-                )
-                if not main_filepath:
-                    continue
-                main_filename = os.path.basename(main_filepath)
-                filepath_list.append(main_filepath)
-            if task["download"]["checksumUrl"] != "":
+
+            # download
+            if not await utils.is_link_alive(task["download"]["url"]):
+                _logger.info(f"Download link expired, skipping. ")
+                continue
+
+            download_dir = config["global"]["download_dir"]
+            https_proxy = config["global"]["https_proxy"]
+            num_chunks = config["downloader"]["num_chunks"]
+
+            filepath_list = []
+            try:
                 async with AsyncChunkDownloader(
-                    task["download"]["checksumUrl"], download_dir, proxy=https_proxy
+                    task["download"]["url"],
+                    download_dir,
+                    num_chunks=num_chunks,
+                    proxy=https_proxy,
                 ) as downloader:
-                    checksum_filepath = await utils.run_with_shutdown(
+                    main_filepath = await utils.run_with_shutdown(
                         downloader.download(), shutdown_event
                     )
-                    if not checksum_filepath:
+                    if not main_filepath:
                         continue
-                    filepath_list.append(checksum_filepath)
-        except Exception as e:
-            await fail_counter.increment()
-            _logger.warning(
-                f"Download failed with exception '{
-                    str(e)}', skipping."
-            )
-            continue
-
-        # check if all files exist first
-        if utils.check_files_exist(filepath_list):
-            utils.remove_files(filepath_list)
-            _logger.error("Some file download failed, skip the task.")
-            continue
-
-        # hashing, crc check,  verify
-        _logger.info(f"Generate checksum for '{main_filename}'")
-
-        crc_task = asyncio.create_task(asyncio.to_thread(zip_verify_crc, main_filepath))
-
-        if config["global"]["hashing_method"] == "sync":
-            hash_list = await asyncio.gather(
-                *(
-                    asyncio.to_thread(
-                        sync_multihash,
-                        fp,
-                        [
-                            hashlib.md5,
-                            hashlib.sha1,
-                            hashlib.sha256,
-                            hashlib.sha512,
-                            hashlib.blake2b,
-                        ],
-                    )
-                    for fp in filepath_list
-                )
-            )
-        else:
-            hash_list = await asyncio.gather(
-                *(
-                    sync_multihash(
-                        fp,
-                        [
-                            hashlib.md5,
-                            hashlib.sha1,
-                            hashlib.sha256,
-                            hashlib.sha512,
-                            hashlib.blake2b,
-                        ],
-                    )
-                    for fp in filepath_list
-                )
-            )
-        hash_dict = {
-            os.path.basename(filepath_list[i]): hash_list[i]
-            for i in range(len(hash_list))
-        }
-        md5_dict = {k: v["md5"] for k, v in hash_dict.items()}
-        main_checksum_d = hash_dict[main_filename]  # dict[str, str]
-
-        if await crc_task:
-            _logger.info(f"CRC checksum passed. '{main_filename}' is good.")
-        else:
-            _logger.error(
-                f"CRC checksum failed, '{
-                    main_filename}' corrupted. Skipping"
-            )
-            await fail_counter.increment()
-            continue
-
-        if "checksum_filepath" in locals():
-            async with aiofiles.open(checksum_filepath, "r") as f:
-                checksum = await f.read()
-            for c in main_checksum_d.values():
-                if c in checksum:
-                    _logger.info(
-                        f"Checksum test passed for' {
-                            main_filename}' "
-                    )
-                    break
-            else:
-                _logger.error(
-                    f"Checksum test failed for '{
-                        main_filename}', skipping  "
-                )
-                continue
-
-        # custom metadata & description
-        description = config["ia"]["common_description"]
-        if main_filename.endswith(".zip"):
-            file_list = await asyncio.to_thread(utils.zip_listfiles, main_filepath)
-            description += (
-                "<br><p><strong>Files</strong></p>"
-                + utils.text_to_html_code_block("\n".join(file_list))
-                + "<br><hr>"
-            )
-        custom_metadata = task["meta"] | {
-            "checksum-" + k: v for k, v in main_checksum_d.items()
-        }
-        custom_metadata["description"] = description
-
-        # uploading
-
-        _logger.info("Start uploading to IA.")
-        async with IAClient(
-            config["ia"]["s3_access_key"],
-            config["ia"]["s3_secret_key"],
-            https_proxy=https_proxy,
-        ) as ia:
-            bucket_name = config["ia"]["bucket_prefix"] + main_filename
-            try:
-                if await ia.head_bucket(bucket_name):
-                    _logger.warning(
-                        f"Bucket {
-                            bucket_name} already exists, skipping upload."
-                    )
-                    continue
-            except Exception as e:
-                _logger.error(
-                    f"Exception '{
-                        e}' happens when trying to head bucket, skip."
-                )
-                continue
-
-            try:
-                await ia.create_bucket(
-                    bucket=bucket_name,
-                    filepaths=filepath_list,
-                    meta_mediatype="data",
-                    meta_title=task["meta"]["description"],
-                    meta_description=description,
-                    meta_collection=config["ia"]["collection"],
-                    # open_source_software, test_collection
-                    custom_metadata=custom_metadata,
-                )
+                    main_filename = os.path.basename(main_filepath)
+                    filepath_list.append(main_filepath)
+                if task["download"]["checksumUrl"] != "":
+                    async with AsyncChunkDownloader(
+                        task["download"]["checksumUrl"], download_dir, proxy=https_proxy
+                    ) as downloader:
+                        checksum_filepath = await utils.run_with_shutdown(
+                            downloader.download(), shutdown_event
+                        )
+                        if not checksum_filepath:
+                            continue
+                        filepath_list.append(checksum_filepath)
             except Exception as e:
                 await fail_counter.increment()
-                traceback.print_exc()
                 _logger.warning(
-                    f"Upload to IA possibly unsuccessful with exception '{
-                        str(e)}', proceed anyway. "
+                    f"Download failed with exception '{
+                        str(e)}', skipping."
                 )
+                continue
 
-        _logger.info(f"Upload to IA finished, record and remove any leftover files.")
+            # check if all files exist first
+            if utils.check_files_exist(filepath_list):
+                utils.remove_files(filepath_list)
+                _logger.error("Some file download failed, skip the task.")
+                continue
 
-        state_dict: StateDict = {
-            "meta": task["meta"],
-            "md5_dict": md5_dict,
-            "time_added": time.time(),
-            "upload_verified": False,
-            "is_complete": False,
-        }
+            # hashing, crc check,  verify
+            _logger.info(f"Generate checksum for '{main_filename}'")
 
-        state_filepath = utils.proj_path("config/state.json")
-        async with state_filelock:
-            async with aiofiles.open(state_filepath, "r+") as f:
-                state_json = json.loads(await f.read())
-                state_json[bucket_name] = state_dict
-                await f.seek(0)
-                await f.write(json.dumps(state_json, indent=4))
-                await f.truncate()
+            crc_task = asyncio.create_task(zip_verify_crc(main_filepath))
 
-        for fp in filepath_list:
-            os.remove(fp)
+            if config["global"]["hashing_method"] == "sync":
+                hash_list = await asyncio.gather(
+                    *(
+                        asyncio.to_thread(
+                            sync_multihash,
+                            fp,
+                            [
+                                hashlib.md5,
+                                hashlib.sha1,
+                                hashlib.sha256,
+                                hashlib.sha512,
+                                hashlib.blake2b,
+                            ],
+                        )
+                        for fp in filepath_list
+                    )
+                )
+            else:
+                hash_list = await asyncio.gather(
+                    *(
+                        sync_multihash(
+                            fp,
+                            [
+                                hashlib.md5,
+                                hashlib.sha1,
+                                hashlib.sha256,
+                                hashlib.sha512,
+                                hashlib.blake2b,
+                            ],
+                        )
+                        for fp in filepath_list
+                    )
+                )
+            hash_dict = {
+                os.path.basename(filepath_list[i]): hash_list[i]
+                for i in range(len(hash_list))
+            }
+            md5_dict = {k: v["md5"] for k, v in hash_dict.items()}
+            main_checksum_d = hash_dict[main_filename]  # dict[str, str]
+
+            if await crc_task:
+                _logger.info(
+                    f"CRC checksum passed. '{
+                        main_filename}' is good."
+                )
+            else:
+                _logger.error(
+                    f"CRC checksum failed, '{
+                        main_filename}' corrupted. Skipping"
+                )
+                await fail_counter.increment()
+                continue
+
+            # custom metadata & description
+            description = config["ia"]["common_description"]
+            if main_filename.endswith(".zip"):
+                file_list = await asyncio.to_thread(utils.zip_listfiles, main_filepath)
+                description += (
+                    "<br><p><strong>Files</strong></p>"
+                    + utils.text_to_html_code_block("\n".join(file_list))
+                    + "<br><hr>"
+                )
+            custom_metadata = task["meta"] | {
+                "checksum-" + k: v for k, v in main_checksum_d.items()
+            }
+            custom_metadata["description"] = description
+
+            # uploading
+
+            _logger.info("Start uploading to IA.")
+            async with IAClient(
+                config["ia"]["s3_access_key"],
+                config["ia"]["s3_secret_key"],
+                https_proxy=https_proxy if config["ia"]["use_proxy"] else None,
+            ) as ia:
+                bucket_name = config["ia"]["bucket_prefix"] + main_filename
+                try:
+                    force_uploading = config["ia"]["force_uploading"]
+                    if not force_uploading and await ia.head_bucket(bucket_name):
+                        _logger.warning(
+                            f"Bucket {
+                                bucket_name} already exists, skipping upload."
+                        )
+                        continue
+                except Exception as e:
+                    _logger.error(
+                        f"Exception '{
+                            e}' happens when trying to head bucket, skip."
+                    )
+                    continue
+
+                try:
+                    await ia.create_bucket(
+                        bucket=bucket_name,
+                        filepaths=filepath_list,
+                        meta_mediatype="data",
+                        meta_title=task["meta"]["description"],
+                        meta_description=description,
+                        meta_collection=config["ia"]["collection"],
+                        # open_source_software, test_collection
+                        custom_metadata=custom_metadata,
+                    )
+                except Exception as e:
+                    await fail_counter.increment()
+                    traceback.print_exc()
+                    _logger.warning(
+                        f"Upload to IA possibly unsuccessful with exception '{
+                            str(e)}', proceed anyway. "
+                    )
+
+            _logger.info(
+                f"Upload to IA finished, record and remove any leftover files."
+            )
+
+            state_dict: StateDict = {
+                "meta": task["meta"],
+                "md5_dict": md5_dict,
+                "time_added": time.time(),
+                "upload_verified": False,
+                "is_complete": False,
+            }
+
+            state_filepath = utils.proj_path("config/state.json")
+            async with state_filelock:
+                async with aiofiles.open(state_filepath, "r+") as f:
+                    state_json = json.loads(await f.read())
+                    state_json[bucket_name] = state_dict
+                    await f.seek(0)
+                    await f.write(json.dumps(state_json, indent=4))
+
+            await asyncio.to_thread(utils.remove_files, filepath_list)
+            if fail_counter.value > 0:
+                await fail_counter.decrement()  # reduce consequtive fail count
+        except Exception as e:
+            _logger.exception(f"Worker exception {e}:")
+            continue
 
     _logger.info(f"Stopped.")
 
@@ -523,7 +517,7 @@ async def main():
         if task_limit == -1:
             task_limit = 1145141919810
 
-        while fail_counter.value < 20:  # hardcoded for now
+        while fail_counter.value < 5:  # hardcoded for now
             await asyncio.sleep(1)
             if not await portal.is_loggedin():  # login and refresh download list
                 await portal.login()
@@ -534,6 +528,10 @@ async def main():
                 async with aiofiles.open(proj_path("config/list.json"), "w") as f:
                     await f.write(json.dumps(meta_list, indent=4))
                 continue
+
+            if not progress_bar_task_started:
+                progress_bar_task_started = True
+                progress_bar.start_task(progress_bar_task)
 
             idle_cnt = len([k for k, v in idle_workers.items() if v])
             if not idle_cnt:
@@ -550,9 +548,11 @@ async def main():
                 and not any(same_meta(meta, i["meta"]) for i in state_json.values())
             ]
 
-            if not progress_bar_task_started:
-                progress_bar_task_started = True
-                progress_bar.start_task(progress_bar_task)
+            meta_to_download = [
+                item["meta"]
+                for item in state_json.values()
+                if item["upload_verified"] and not item["is_complete"]
+            ] + meta_to_download  # prioritize retry failed tasks
 
             progress_bar.update(
                 progress_bar_task, total=len(meta_list), completed=len(state_json)
@@ -571,9 +571,20 @@ async def main():
                         last_message_time = asyncio.get_event_loop().time()
                     continue
 
-            meta_to_queue = random.choices(
-                meta_to_download, k=min(len(meta_to_download), idle_cnt, task_limit)
-            )
+            meta_to_download = [
+                item
+                for item in meta_to_download
+                if "GPU Manager Plug" in item["description"]
+            ]
+
+            # meta_to_queue = random.choices(
+            #     meta_to_download, k=min(
+            #         len(meta_to_download), idle_cnt, task_limit)
+            # )
+            meta_to_queue = meta_to_download[
+                : min(len(meta_to_download), idle_cnt, task_limit)
+            ]
+
             task_limit -= len(meta_to_queue)
             try:
                 download_to_queue = await asyncio.gather(

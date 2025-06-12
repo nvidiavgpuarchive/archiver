@@ -67,7 +67,9 @@ class AsyncChunkDownloader:
             return final_path
 
         self._state = "downloading"
-        if not self._support_range or self._total_bytes <= 1024:  # basic downloading
+        if (
+            not self._support_range or self._total_bytes <= (1024**2) * 128
+        ):  # basic downloading, no point to use chunks for file <= 128MB
             _logger.debug(
                 f"File {
                     self._filename} does not support multipart downloading or is too small."
@@ -93,15 +95,22 @@ class AsyncChunkDownloader:
                 for idx, (start, end) in enumerate(chunks)
             ]
             chunk_filelist = await asyncio.gather(*download_tasks)
+
+            for chunk in chunk_filelist:
+                if not os.path.exists(chunk):
+                    await asyncio.to_thread(utils.remove_files, chunk_filelist)
+                    _logger.error(f"{chunk} not found.")
+                    raise Exception("Chunks incomplete.")
+
             chunk_total_size = sum(os.path.getsize(f) for f in chunk_filelist)
             if chunk_total_size != self._total_bytes:
-                for f in chunk_filelist:
-                    if os.path.exists(f):
-                        os.remove(f)
+                await asyncio.to_thread(utils.remove_files, chunk_filelist)
                 _logger.error(
-                    f"Error. Expect {chunk_total_size} bytes, "
+                    f"Final size verification error. Expect {
+                        self._total_bytes} bytes, "
                     f"got {chunk_total_size} bytes"
                 )
+                raise Exception("Size mismatch.")
 
             final_path = await asyncio.to_thread(self._merge_chunks, chunk_filelist)
             self._state = "done"
@@ -238,7 +247,7 @@ class AsyncChunkDownloader:
                 if bytes_downloaded != self._total_bytes:
                     utils.log_error_and_raise(
                         _logger,
-                        f"Expect {self._total_bytes}, got {
+                        f"Basic download size verification error, expect {self._total_bytes}, got {
                             bytes_downloaded}.",
                     )
                 return final_filepath
@@ -316,8 +325,7 @@ class AsyncChunkDownloader:
         if chunk_bytes_downloaded != end - start:
             utils.log_error_and_raise(
                 _logger,
-                f"Chunk download failed. "
-                f"Expect {
+                f"Chunk download failed, expect {
                     end - start} bytes, got {chunk_bytes_downloaded} "
                 f"bytes",
             )

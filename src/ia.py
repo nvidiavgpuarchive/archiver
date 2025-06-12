@@ -117,7 +117,8 @@ class IAClient:
             and re.fullmatch(r"[A-Za-z0-9._-]+", bucket)
             and (bucket[0].isalpha() or bucket.isnumeric())
         ):
-            utils.log_error_and_raise(_logger, f"Invalid identifier '{bucket}'")
+            utils.log_error_and_raise(
+                _logger, f"Invalid identifier '{bucket}'")
 
         required_metadata = {
             "identifier": bucket,
@@ -143,7 +144,8 @@ class IAClient:
         total_bytes = 0
         for filepath in filepaths:
             if not os.path.exists(filepath):
-                utils.log_error_and_raise(_logger, f"File '{filepath}' does not exist")
+                utils.log_error_and_raise(
+                    _logger, f"File '{filepath}' does not exist")
             total_bytes += os.path.getsize(filepath)
 
         headers = {
@@ -157,9 +159,12 @@ class IAClient:
             "authorization": f"LOW {self._access_key}:{self._secret_key}",
         }
 
-        option_keep_old_version and headers.update({"x-archive-keep-old-version": 1})
-        option_delete_derived_files and headers.update({"x-archive-cascade-delete": 1})
-        option_skip_derive_process and headers.update({"x-archive-queue-derive": 1})
+        option_keep_old_version and headers.update(
+            {"x-archive-keep-old-version": 1})
+        option_delete_derived_files and headers.update(
+            {"x-archive-cascade-delete": 1})
+        option_skip_derive_process and headers.update(
+            {"x-archive-queue-derive": 1})
 
         if custom_metadata:
             for key, value in custom_metadata.items():
@@ -221,8 +226,6 @@ class IAClient:
                     IAClient.global_bytes_uploaded += chunk_size
                     yield chunk
 
-        last_exception = None
-        last_resptext = None
         for _ in range(attempts):
             try:
                 async with self._connection_semaphore:
@@ -233,25 +236,19 @@ class IAClient:
                             data=file_chunker(filepath),
                             proxy=self._proxy,
                         ) as resp:
-                            last_resptext = await resp.text()
                             if resp.status >= 400:
                                 raise Exception("Bad status code ")
-                            _logger.info(f"Successfully uploaded '{filepath}'.")
+                            _logger.info(
+                                f"Successfully uploaded '{filepath}'.")
                 return
             except Exception as e:
-                last_exception = e
-                _logger.debug(
+                _logger.info(
                     f"Upload '{filepath}' failed with exception '{
-                        str(e)}' and message '{last_resptext}', retrying."
+                        str(e)}', retrying"
                 )
                 await asyncio.sleep(attempts * 2)
         else:
-            utils.log_error_and_raise(
-                _logger,
-                f"Upload '{filepath}' failed after {
-                    attempts} attempts, last exception {last_exception}, last message {last_resptext}",
-            )
-            return None
+            raise Exception("Upload failed")
 
     async def download_file(
         self, bucket: str, filename: str, output_dir: str, fast_get=False, attempts=3
@@ -349,7 +346,8 @@ class IAClient:
         Will use md5_dict if provided, otherwise will calculate md5 for each file in filepaths.
         """
         if not filepaths and not md5_dict:
-            utils.log_error_and_raise(_logger, "No filepaths or md5_dict provided.")
+            utils.log_error_and_raise(
+                _logger, "No filepaths or md5_dict provided.")
 
         if md5_dict:
             md5_items = md5_dict.items()

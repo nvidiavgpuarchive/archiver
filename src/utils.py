@@ -17,6 +17,7 @@ from typing import Coroutine, Dict, List, Tuple
 
 import aiofiles
 import aiohttp
+import libarchive.public
 import psutil
 import yaml
 from playwright.async_api import Page
@@ -158,17 +159,24 @@ def zip_listfiles(zippath: str) -> list[str]:
         return z.namelist()
 
 
-def zip_verify_crc(zippath: str) -> bool:
-    """
-    Probably use asyncio to thread for this one
-    """
-
-    with zipfile.ZipFile(zippath, "r") as z:
-        is_badfile = z.testzip()
-        if is_badfile:
-            return False
-        else:
-            return True
+# use external tools for this one because all
+# python libs fails miserably when encourtering
+# some compression formats
+async def zip_verify_crc(zippath: str) -> bool:
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "7z",
+            "t",
+            zippath,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+        stdout_text = stdout.decode()
+        # Optional: stderr_text = stderr.decode()
+        return "Everything is Ok" in stdout_text
+    except Exception as e:
+        return False
 
 
 async def is_link_alive(url, timeout=10):
