@@ -82,7 +82,8 @@ class AsyncChunkDownloader:
             final_path = await self._basic_download()
             return final_path
         else:  # chunked downloading
-            chunks = self._divide_into_chunks()
+            chunks = utils.divide_into_chunks(
+                self._total_bytes, self._num_chunks)
             _logger.info(
                 f"Downloading '{self._filename}' with {
                     self._num_chunks} chunks,"
@@ -181,7 +182,8 @@ class AsyncChunkDownloader:
 
                         # get filename if avail
                         filename = None
-                        content_disp = resp.headers.get("Content-Disposition", "")
+                        content_disp = resp.headers.get(
+                            "Content-Disposition", "")
                         if "filename" in content_disp:
                             match = re.search(
                                 r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';]+)',
@@ -209,20 +211,6 @@ class AsyncChunkDownloader:
 
         # self._support_range = True
         self._support_range = await self._is_url_supports_range()
-
-    def _divide_into_chunks(self) -> List[Tuple]:
-        base = self._total_bytes // self._num_chunks
-        reminder = self._total_bytes % self._num_chunks
-
-        res = []
-        start = 0
-        for i in range(self._num_chunks):
-            # chatgpt says it's smart to do this
-            chunk_size = base + (1 if i < reminder else 0)
-            end = start + chunk_size
-            res.append((start, end))
-            start = end
-        return res
 
     async def _basic_download(self, attempts=3) -> str | None:
         """
@@ -256,7 +244,8 @@ class AsyncChunkDownloader:
         else:
             if os.path.exists(final_filepath):
                 os.remove(final_filepath)  # clean up if failed
-            utils.log_error_and_raise(_logger, f"Failed to download {final_filepath}")
+            utils.log_error_and_raise(
+                _logger, f"Failed to download {final_filepath}")
             return None
 
     async def _chunk_download(
@@ -281,11 +270,15 @@ class AsyncChunkDownloader:
 
         cons_fail = 0
         while cons_fail < attempts:
-            try:
-                current_start = start + chunk_bytes_downloaded
-                headers = {"Range": f"bytes={current_start}-{end - 1}"}
+            current_start = start + chunk_bytes_downloaded
+            headers = {"Range": f"bytes={current_start}-{end - 1}"}
 
-                async with aiohttp.ClientSession() as session:
+            connector = aiohttp.TCPConnector(
+                force_close=True, enable_cleanup_closed=True
+            )
+
+            try:
+                async with aiohttp.ClientSession(connector=connector) as session:
                     async with session.get(
                         self._url, headers=headers, proxy=self._proxy
                     ) as resp:
@@ -302,33 +295,50 @@ class AsyncChunkDownloader:
                                 AsyncChunkDownloader.global_bytes_downloaded += len(
                                     chunk
                                 )
-                    break
+
+                # success → break
+                break
+
+            except (aiohttp.ClientConnectionError, ConnectionResetError) as e:
+                _logger.debug(
+                    f"Chunk {part_index} connection error: {
+                        str(e)}, retrying..."
+                )
+                last_exception = e
+
             except Exception as e:
                 last_exception = e
-                if chunk_bytes_last_downloaded == chunk_bytes_downloaded:
-                    await asyncio.sleep(2**cons_fail)
-                    cons_fail += 1
-                else:
-                    cons_fail = 0
-                    chunk_bytes_last_downloaded = chunk_bytes_downloaded
+                _logger.debug(
+                    f"Chunk {part_index} download error: {str(e)}, retrying..."
+                )
+
+            # Retry logic — exponential backoff if no progress
+            if chunk_bytes_last_downloaded == chunk_bytes_downloaded:
+                await asyncio.sleep(2**cons_fail)
+                cons_fail += 1
+            else:
+                cons_fail = 0
+                chunk_bytes_last_downloaded = chunk_bytes_downloaded
+
         else:
             if os.path.exists(chunk_filepath):
                 os.remove(chunk_filepath)  # clean up if failed
             utils.log_error_and_raise(
                 _logger,
-                f"After {attempts} attempts failed to download part {part_index} from {
-                    self._url}, last exception : "
-                f"{last_exception}",
+                f"After {attempts} attempts failed to download part {
+                    part_index} from {self._url}, "
+                f"last exception: {last_exception}",
             )
             return None
 
+        # Final verification
         if chunk_bytes_downloaded != end - start:
             utils.log_error_and_raise(
                 _logger,
                 f"Chunk download failed, expect {
-                    end - start} bytes, got {chunk_bytes_downloaded} "
-                f"bytes",
+                    end - start} bytes, got {chunk_bytes_downloaded} bytes",
             )
+
         _logger.debug(
             f"Chunk {part_index} downloaded to {chunk_filepath}, "
             f"size {utils.human_readable_size_str(chunk_bytes_downloaded)}"

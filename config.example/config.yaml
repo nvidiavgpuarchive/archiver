@@ -28,3 +28,5 @@ ia:
     <p><i>Downloading via torrent is encouraged.</i></p>
     <p>For more information about this project and a complete list of all archived drivers, please visit <a href="https://github.com/nvidiavgpuarchive/hub" target="_blank" rel="noopener">nvidiavgpuarchive/hub</a>.</p>
     <hr>
+  force_uploading: True # if true try to uploda to bucket no matter it exists or not
+  use_proxy: False # using proxy may cause frequent large file upload timeout

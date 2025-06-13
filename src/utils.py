@@ -6,9 +6,12 @@ import html
 import inspect
 import logging
 import os
+import random
 import re
 import socket
+import string
 import sys
+import tempfile
 import threading
 import types
 import zipfile
@@ -17,7 +20,6 @@ from typing import Coroutine, Dict, List, Tuple
 
 import aiofiles
 import aiohttp
-import libarchive.public
 import psutil
 import yaml
 from playwright.async_api import Page
@@ -97,7 +99,8 @@ def run_async_blocking(awaitable_func, *args, **kwargs):
         loop.close()
     else:
         # If we're in a running loop, use run_coroutine_threadsafe
-        f = asyncio.run_coroutine_threadsafe(awaitable_func(*args, **kwargs), loop)
+        f = asyncio.run_coroutine_threadsafe(
+            awaitable_func(*args, **kwargs), loop)
         f.result()
 
 
@@ -310,7 +313,10 @@ async def run_with_shutdown(c: Coroutine, e: asyncio.Event) -> any:
         {coroutine_task, shutdown_task}, return_when=asyncio.FIRST_COMPLETED
     )
     for task in pending:
-        task.cancel()
+        try:
+            task.cancel()
+        except:
+            pass
     if coroutine_task in done:
         return coroutine_task.result()
     else:
@@ -354,6 +360,30 @@ def where_am_i():
     filename = frame.f_code.co_filename
     line_number = frame.f_lineno
     return (filename, line_number)
+
+
+async def generate_placeholder():
+    random_data = "".join(random.choices(string.digits, k=32))
+    tmp_fd, tmp_path = tempfile.mkstemp(prefix="placeholder_", suffix=".txt")
+    os.close(tmp_fd)  # Close the os-level file descriptor
+    async with aiofiles.open(tmp_path, mode="w") as f:
+        await f.write(random_data)
+    return tmp_path
+
+
+def divide_into_chunks(total_size: int, num_chunks: int) -> List[Tuple]:
+    base = total_size // num_chunks
+    reminder = total_size % num_chunks
+
+    res = []
+    start = 0
+    for i in range(num_chunks):
+        # chatgpt says it's smart to do this
+        chunk_size = base + (1 if i < reminder else 0)
+        end = start + chunk_size
+        res.append((start, end))
+        start = end
+    return res
 
 
 async def main():

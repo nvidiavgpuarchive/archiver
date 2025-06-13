@@ -53,7 +53,8 @@ incomplete_column = CounterColumn(
 coroutines_column = CounterColumn(
     utils.count_active_coroutines, label="Coroutines", color="cyan"
 )
-threads_column = CounterColumn(threading.active_count, label="Threads", color="yellow")
+threads_column = CounterColumn(
+    threading.active_count, label="Threads", color="yellow")
 mem_column = CounterColumn(
     utils.get_memory_usage, label="Mem", color="magenta", bytes_conv=True
 )
@@ -100,7 +101,8 @@ def live_display_render():
     return table
 
 
-live_display = Live(live_display_render(), refresh_per_second=10, transient=True)
+live_display = Live(live_display_render(),
+                    refresh_per_second=10, transient=True)
 live_display.start()
 
 
@@ -273,6 +275,7 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                 config["ia"]["s3_access_key"],
                 config["ia"]["s3_secret_key"],
                 https_proxy=https_proxy if config["ia"]["use_proxy"] else None,
+                multipart_chunksize=1024**2 * 256,  # 256MB
             ) as ia:
                 bucket_name = config["ia"]["bucket_prefix"] + main_filename
                 try:
@@ -300,6 +303,8 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                         meta_collection=config["ia"]["collection"],
                         # open_source_software, test_collection
                         custom_metadata=custom_metadata,
+                        multipart=os.path.getsize(
+                            main_filepath) > 1024**2 * 256,
                     )
                 except Exception as e:
                     await fail_counter.increment()
@@ -379,7 +384,8 @@ async def verification_worker(config, delay=10, n=8):
         ) as ia:
             results = await asyncio.gather(
                 *(
-                    ia.verify_bucket(item[0], md5_dict=item[1]["md5_dict"], timeout=5)
+                    ia.verify_bucket(
+                        item[0], md5_dict=item[1]["md5_dict"], timeout=5)
                     for item in to_verify
                 ),
                 return_exceptions=True,
@@ -430,7 +436,8 @@ def signal_handler(_, frame):
         try:
             live_display.stop()
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            crash_file = os.path.join(tempfile.gettempdir(), f"crash_{timestamp}.log")
+            crash_file = os.path.join(
+                tempfile.gettempdir(), f"crash_{timestamp}.log")
 
             with open(crash_file, "w") as f:
                 f.write(f"Emergency shutdown triggered at {datetime.now()}\n")
@@ -438,7 +445,8 @@ def signal_handler(_, frame):
                 traceback.print_stack(frame, file=f)
             _logger.warning(f"Crash log saved to '{crash_file}'")
         except Exception as e:
-            _logger.warning("Another exception occurred when trying to write log.")
+            _logger.warning(
+                "Another exception occurred when trying to write log.")
             print(e)
             _logger.warning("Quit without saving the log.")
             pass  # If we can't write the crash log, just exit
@@ -465,6 +473,10 @@ async def main():
     if not os.path.exists(state_filepath):
         with open(state_filepath, "w") as f:
             f.write("{}")
+    shutil.copy(
+        state_filepath, utils.proj_path(
+            f"bak/state.{time.strftime('%H-%M-%S')}.json")
+    )
     download_dir = config["global"]["download_dir"]
     if not os.path.exists(download_dir):
         os.mkdir(download_dir)
@@ -485,7 +497,8 @@ async def main():
         )
         for i in range(config["global"]["num_workers"])
     ]
-    async_verification = asyncio.create_task(verification_worker(config, delay=10, n=8))
+    async_verification = asyncio.create_task(
+        verification_worker(config, delay=10, n=8))
 
     # main routine
     gmail_client = GmailClient(
@@ -571,11 +584,11 @@ async def main():
                         last_message_time = asyncio.get_event_loop().time()
                     continue
 
-            meta_to_download = [
-                item
-                for item in meta_to_download
-                if "GPU Manager Plug" in item["description"]
-            ]
+            # meta_to_download = [
+            #     item
+            #     for item in meta_to_download
+            #     if "GPU Manager Plug" in item["description"]
+            # ]
 
             # meta_to_queue = random.choices(
             #     meta_to_download, k=min(

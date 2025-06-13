@@ -137,7 +137,6 @@ class NvidiaWebPortal:
                     if v_resp.status == 200:
                         self._userinfo = info
                         self._virtual_groups = await v_resp.json()
-                        _logger.debug("Userinfo and virtual groups refreshed.")
                         return
                     _logger.error(
                         f"Get virtual groups failed with status code {
