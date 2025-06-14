@@ -66,14 +66,12 @@ async def playwright_wait_for_any(page: Page, urls: Dict[str, str], timeout=30):
     Raise timeout if all timeout
     """
 
-    tasks = {
-        asyncio.create_task(page.wait_for_url(url, timeout=timeout * 1000)): tag
-        for tag, url in urls.items()
-    }
+    tasks = {asyncio.create_task(page.wait_for_url(url, timeout=timeout * 1000)): tag for tag, url
+             in urls.items()}
 
-    done, pending = await asyncio.wait(
-        tasks.keys(), timeout=timeout, return_when=asyncio.FIRST_COMPLETED
-    )
+    done, pending = await asyncio.wait(tasks.keys(),
+                                       timeout=timeout,
+                                       return_when=asyncio.FIRST_COMPLETED)
 
     for task in pending:
         task.cancel()
@@ -99,14 +97,11 @@ def run_async_blocking(awaitable_func, *args, **kwargs):
         loop.close()
     else:
         # If we're in a running loop, use run_coroutine_threadsafe
-        f = asyncio.run_coroutine_threadsafe(
-            awaitable_func(*args, **kwargs), loop)
+        f = asyncio.run_coroutine_threadsafe(awaitable_func(*args, **kwargs), loop)
         f.result()
 
 
-def sanitize_filename(
-    filename: str, replacement: str = "_", max_length: int = 255
-) -> str:
+def sanitize_filename(filename: str, replacement: str = "_", max_length: int = 255) -> str:
     """
     Replace invalid filename characters with a safe replacement.
 
@@ -141,10 +136,8 @@ def sanitize_filename(
 
 def human_readable_size(num_bytes: int, long=True) -> Tuple[float, str]:
     scale = (
-        ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes", "petabytes"]
-        if long
-        else ["B", "KB", "MB", "GB", "TB", "PB"]
-    )
+        ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes", "petabytes"] if long else [
+            "B", "KB", "MB", "GB", "TB", "PB"])
     for idx, word in enumerate(scale[::-1]):
         power = 1024 ** (len(scale) - idx - 1)
         if num_bytes >= power:
@@ -167,13 +160,11 @@ def zip_listfiles(zippath: str) -> list[str]:
 # some compression formats
 async def zip_verify_crc(zippath: str) -> bool:
     try:
-        process = await asyncio.create_subprocess_exec(
-            "7z",
-            "t",
-            zippath,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        process = await asyncio.create_subprocess_exec("7z",
+                                                       "t",
+                                                       zippath,
+                                                       stdout=asyncio.subprocess.PIPE,
+                                                       stderr=asyncio.subprocess.PIPE, )
         stdout, stderr = await process.communicate()
         stdout_text = stdout.decode()
         # Optional: stderr_text = stderr.decode()
@@ -184,9 +175,7 @@ async def zip_verify_crc(zippath: str) -> bool:
 
 async def is_link_alive(url, timeout=10):
     try:
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=timeout)
-        ) as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
             async with session.head(url, allow_redirects=True) as resp:
                 return resp.status == 200
     except Exception as e:
@@ -194,9 +183,7 @@ async def is_link_alive(url, timeout=10):
         return False
 
 
-async def async_hash(
-    filepath, hashfunc: callable = hashlib.md5, bufsize=1024**2
-) -> str:
+async def async_hash(filepath, hashfunc: callable = hashlib.md5, bufsize=1024 ** 2) -> str:
     hashis = hashfunc()
     async with aiofiles.open(filepath, "rb") as f:
         while True:
@@ -207,9 +194,7 @@ async def async_hash(
     return hashis.hexdigest()
 
 
-async def async_multihash(
-    filepath, hashfuncs: list[callable], bufsize=1024**2
-) -> dict[str, str]:
+async def async_multihash(filepath, hashfuncs: list[callable], bufsize=1024 ** 2) -> dict[str, str]:
     """
     Compute mulitple hashes at once, more efficient than calling async_hash multiple times.
     await asyicio.to_thread(...)
@@ -227,7 +212,8 @@ async def async_multihash(
 
 def sync_multihash(filepath: str, hashfuncs: list[callable]) -> dict[str, str]:
     """
-    Synchronously load the entire file into memory, then compute multiple hashes in parallel, one per thread.
+    Synchronously load the entire file into memory, then compute multiple hashes in parallel,
+    one per thread.
     Requires a lot of memory significantly faster than aysnc mulithash.
     """
     with open(filepath, "rb") as f:
@@ -309,9 +295,8 @@ async def run_with_shutdown(c: Coroutine, e: asyncio.Event) -> any:
     coroutine_task = asyncio.create_task(c)
     shutdown_task = asyncio.create_task(e.wait())
 
-    done, pending = await asyncio.wait(
-        {coroutine_task, shutdown_task}, return_when=asyncio.FIRST_COMPLETED
-    )
+    done, pending = await asyncio.wait({coroutine_task, shutdown_task},
+                                       return_when=asyncio.FIRST_COMPLETED)
     for task in pending:
         try:
             task.cancel()
@@ -328,7 +313,7 @@ def text_to_html_code_block(text: str) -> str:
     return f"<pre><code>{escaped_text}</code></pre>"
 
 
-def check_files_exist(filepaths: list[str]) -> list[str]:
+def check_non_exist(filepaths: list[str]) -> list[str]:
     """
     Accepts a list of absolute filepaths, return a list of str
     of files that doesn't exist in the file system
@@ -386,12 +371,33 @@ def divide_into_chunks(total_size: int, num_chunks: int) -> List[Tuple]:
     return res
 
 
+def run_async_in_thread(coro: Coroutine) -> threading.Thread:
+    """
+    Run an async coroutine in a separate thread with its own event loop.
+    The thread and event loop shut down automatically when the coroutine is done.
+    """
+
+    def thread_entry():
+        # Create and bind a new event loop to this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    t = threading.Thread(target=thread_entry)
+    t.start()
+    return t
+
+
 async def main():
     where_am_i()
     return
     # Generate a dummy 5 GB file if it doesn't exist
     dummy_path = proj_path("dummy_5gb.bin")
-    size_bytes = 5 * 1024**3  # 5 GB
+    size_bytes = 5 * 1024 ** 3  # 5 GB
 
     if not os.path.exists(dummy_path) or os.path.getsize(dummy_path) != size_bytes:
         print("Creating 5GB dummy file...")
@@ -403,13 +409,7 @@ async def main():
 
     import time
 
-    hashfuncs = [
-        hashlib.md5,
-        hashlib.sha1,
-        hashlib.sha256,
-        hashlib.sha512,
-        hashlib.blake2b,
-    ]
+    hashfuncs = [hashlib.md5, hashlib.sha1, hashlib.sha256, hashlib.sha512, hashlib.blake2b, ]
 
     print("Hashing 5GB file asynchronously...")
     t_start = time.time()

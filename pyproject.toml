@@ -1,15 +1,15 @@
 [project]
 name = "vgpu"
 version = "0.1.0"
-description = "Add your description here"
+description = "Scrapes nvidia vgpu and upload to internet archive."
 requires-python = ">=3.12"
 dependencies = [
     "aiofiles==24.1.0",
     "aiohttp==3.12.4",
     "aioimaplib==2.0.1",
-    "frozenlist==1.6.2",
     "internetarchive==5.4.0",
     "playwright==1.52.0",
+    "pony>=0.7.19",
     "psutil>=7.0.0",
     "pytest==8.3.5",
     "pytest-asyncio==1.0.0",

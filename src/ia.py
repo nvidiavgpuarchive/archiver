@@ -1,9 +1,7 @@
 import asyncio
 import math
 import os
-import random
 import re
-import string
 import urllib
 from typing import Any
 from xml.etree import ElementTree
@@ -38,8 +36,10 @@ class IAClient:
     - notes: str
     - identifier : str (required)
 
-    Mulitpart is definitely possible, but since there's a concurrency limit (12 currently),
-    Enable mulitpart means me can't have concurrent upload tasks which is a waste imo
+    If multipart upload is enabled the verification may take a really long time to process.
+    Multipart upload is not recommend for files < 256 MB
+
+    https://www.alibabacloud.com/help/en/oss/user-guide/multipart-upload
 
     All operations in the class is stateless.
     """
@@ -47,14 +47,9 @@ class IAClient:
     _semaphore_cache = {}
     global_bytes_uploaded = 0
 
-    def __init__(
-        self,
-        access_key: str,
-        secret_key: str,
-        https_proxy=None,
-        # not larger than 256MB, adjust according to filesize
-        multipart_chunksize=1024**2 * 16,
-    ):
+    def __init__(self, access_key: str, secret_key: str, https_proxy=None,
+                 # not larger than 256MB, adjust according to filesize
+                 multipart_chunksize=1024 ** 2 * 16, ):
         self._access_key = access_key
         self._secret_key = secret_key
         self._proxy = https_proxy
@@ -69,8 +64,7 @@ class IAClient:
         self._default_headers = {
             "x-amz-auto-make-bucket": "1",
             "x-archive-interactive-priority": "1",
-            "authorization": f"LOW {self._access_key}:{self._secret_key}",
-        }
+            "authorization": f"LOW {self._access_key}:{self._secret_key}", }
 
     @staticmethod
     def safe_headers(header: str) -> str:
@@ -91,80 +85,55 @@ class IAClient:
             async with session.get(url, proxy=self._proxy) as resp:
                 if resp.status == 200:
                     return await resp.json()
-                utils.log_error_and_raise(
-                    _logger,
-                    f"Get metadata of '{
-                        bucket}' failed with status {resp.status}",
-                )
+                utils.log_error_and_raise(_logger, f"Get metadata of '{bucket}' failed with status "
+                                                   f"{resp.status}", )
                 return None
 
-    async def create_bucket(
-        self,
-        bucket: str,
-        # for simplicity sake, filename is same as local fliename
-        filepaths: list[str],
-        meta_mediatype: str,
-        meta_title: str,
-        meta_description: str,
-        meta_collection: str,  # test_collection if to be deleted in 30 days
-        custom_metadata: dict = {},  # metadata otherthan those required as params
-        # custom metadata cannot contain _, use - instead
-        option_keep_old_version=False,
-        option_delete_derived_files=True,
-        option_skip_derive_process=False,
-        multipart=False,
-    ):
+    async def create_bucket(self,
+                            bucket: str,  # for simplicity sake, filename is same as local fliename
+                            filepaths: list[str],
+                            meta_mediatype: str,
+                            meta_title: str,
+                            meta_description: str,
+                            meta_collection: str,  # test_collection if to be deleted in 30 days
+                            custom_metadata: dict = {},
+                            # metadata otherthan those required as params
+                            # custom metadata cannot contain _, use - instead
+                            option_keep_old_version=False,
+                            option_delete_derived_files=True,
+                            option_skip_derive_process=False,
+                            multipart=False, ):
         # metadata and headers
-        accepte_mediatypes = [
-            "texts",
-            "etree",
-            "audio",
-            "movies",
-            "software",
-            "image",
-            "data",
-            "web",
-        ]
+        accepte_mediatypes = ["texts", "etree", "audio", "movies", "software", "image", "data",
+                              "web", ]
         if meta_mediatype not in accepte_mediatypes:
-            utils.log_error_and_raise(
-                _logger,
-                f"'{meta_mediatype}' not in '{
-                    accepte_mediatypes}'",
-            )
-        if not (
-            5 <= len(bucket) <= 100
-            and re.fullmatch(r"[A-Za-z0-9._-]+", bucket)
-            and (bucket[0].isalpha() or bucket.isnumeric())
-        ):
-            utils.log_error_and_raise(
-                _logger, f"Invalid identifier '{bucket}'")
+            utils.log_error_and_raise(_logger,
+                                      f"'{meta_mediatype}' not in '{accepte_mediatypes}'", )
+        if not (5 <= len(bucket) <= 100 and re.fullmatch(r"[A-Za-z0-9._-]+", bucket) and (
+                bucket[0].isalpha() or bucket.isnumeric())):
+            utils.log_error_and_raise(_logger, f"Invalid identifier '{bucket}'")
 
         required_metadata = {
             "identifier": bucket,
             "mediatype": meta_mediatype,
             "title": meta_title,
             "description": meta_description,
-            "collection": meta_collection,
-        }
+            "collection": meta_collection, }
 
         for k in list(custom_metadata.keys()):
             v = custom_metadata[k]
             if k in required_metadata:
                 if v != required_metadata[k]:
-                    _logger.error(
-                        f"parameter['{k}'] = '{
-                            required_metadata[k]}', custom['{k}'] = '{v}'"
-                    )
-                    utils.log_error_and_raise(
-                        _logger, "Discrepancy between parameter and custom metadata."
-                    )
+                    _logger.error(f"parameter['{k}'] = '{required_metadata[k]}', custom['{k}'] = "
+                                  f"'{v}'")
+                    utils.log_error_and_raise(_logger,
+                                              "Discrepancy between parameter and custom metadata.")
                 else:
                     del custom_metadata[k]
         total_bytes = 0
         for filepath in filepaths:
             if not os.path.exists(filepath):
-                utils.log_error_and_raise(
-                    _logger, f"File '{filepath}' does not exist")
+                utils.log_error_and_raise(_logger, f"File '{filepath}' does not exist")
             total_bytes += os.path.getsize(filepath)
 
         headers = {
@@ -175,15 +144,11 @@ class IAClient:
             "x-amz-auto-make-bucket": "1",
             "x-archive-size-hint": total_bytes,
             "x-archive-interactive-priority": 1,
-            "authorization": f"LOW {self._access_key}:{self._secret_key}",
-        }
+            "authorization": f"LOW {self._access_key}:{self._secret_key}", }
 
-        option_keep_old_version and headers.update(
-            {"x-archive-keep-old-version": 1})
-        option_delete_derived_files and headers.update(
-            {"x-archive-cascade-delete": 1})
-        option_skip_derive_process and headers.update(
-            {"x-archive-queue-derive": 1})
+        option_keep_old_version and headers.update({"x-archive-keep-old-version": 1})
+        option_delete_derived_files and headers.update({"x-archive-cascade-delete": 1})
+        option_skip_derive_process and headers.update({"x-archive-queue-derive": 1})
 
         if custom_metadata:
             for key, value in custom_metadata.items():
@@ -200,17 +165,16 @@ class IAClient:
 
         if not multipart:
             # upload first to create the bucket
-            await asyncio.gather(
-                *(self.upload_file(bucket, filepath) for filepath in filepaths)
-            )
+            await asyncio.gather(*(self.upload_file(bucket, filepath) for filepath in filepaths))
         else:
             for fp in filepaths:
-                if os.path.getsize(fp) < 1024**2 * 8:
+                if os.path.getsize(fp) < 1024 ** 2 * 8:
                     await self.upload_file(bucket, fp, headers)
                 else:
-                    await self.mulitpart_upload_file(
-                        bucket, fp, headers, chunk_size=self._mulitpart_chunksize
-                    )
+                    await self.mulitpart_upload_file(bucket,
+                                                     fp,
+                                                     headers,
+                                                     chunk_size=self._mulitpart_chunksize)
 
         os.remove(placeholder_filepath)
         await self.delete_file(bucket, os.path.basename(placeholder_filepath))
@@ -221,19 +185,18 @@ class IAClient:
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(3))
     async def delete_file(self, bucket: str, filename: str):
-
         url = f"https://s3.us.archive.org/{bucket}/{filename}"
         async with aiohttp.ClientSession() as session:
-            async with session.delete(
-                url, headers=self._default_headers, proxy=self._proxy
-            ) as resp:
+            async with session.delete(url,
+                                      headers=self._default_headers,
+                                      proxy=self._proxy) as resp:
                 body = await resp.text()
                 _logger.debug(f"delete request body: {body}")
                 resp.raise_for_status()
                 return
 
     @staticmethod
-    async def _file_chunker(path, chunk_size=1024**2, start=0, end=None):
+    async def _file_chunker(path, chunk_size=1024 ** 2, start=0, end=None):
         async with aiofiles.open(path, "rb") as af:
             await af.seek(start)
             pos = start
@@ -256,9 +219,7 @@ class IAClient:
                 pos += len(chunk)
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(3))
-    async def _multipart_init(
-        self, bucket: str, filepath: str, headers: dict[str, Any]
-    ):
+    async def _multipart_init(self, bucket: str, filepath: str, headers: dict[str, Any]):
         filename = os.path.basename(filepath)
         url = f"https://s3.us.archive.org/{bucket}/{filename}?uploads"
         if not headers:
@@ -266,9 +227,7 @@ class IAClient:
         headers |= {"Content-Length": str(os.path.getsize(filepath))}
         async with aiohttp.ClientSession() as session:
             async with self._connection_semaphore:
-                async with session.post(
-                    url, headers=headers, proxy=self._proxy
-                ) as resp:
+                async with session.post(url, headers=headers, proxy=self._proxy) as resp:
                     body = await resp.text()
                     _logger.debug(f"Mulitpart init resp : {body} ")
                     if resp.status >= 400:
@@ -279,96 +238,84 @@ class IAClient:
                     return upload_id
 
     # @retry(stop=stop_after_attempt(20), wait=wait_fixed(1))
-    async def _multipart_upload_part(
-        self,
-        bucket: str,
-        filepath: str,
-        upload_id: str,
-        part_number: int,
-        start: int,
-        end: int,  # [start, end)
-    ):
-
+    async def _multipart_upload_part(self,
+                                     bucket: str,
+                                     filepath: str,
+                                     upload_id: str,
+                                     part_number: int,
+                                     start: int,
+                                     end: int,  # [start, end)
+                                     ):
         filename = os.path.basename(filepath)
         for _ in range(20):
             try:
-                url = f"https://s3.us.archive.org/{bucket}/{
-                    filename}?uploadId={upload_id}&partNumber={part_number}"
-                header = self._default_headers | {
-                    "Content-Length": str(end - start)}
+                url = (f"https://s3.us.archive.org/{bucket}/{filename}?uploadId="
+                       f"{upload_id}&partNumber={part_number}")
+                header = self._default_headers | {"Content-Length": str(end - start)}
                 async with aiohttp.ClientSession() as session:
                     async with self._connection_semaphore:
-                        async with session.put(
-                            url,
-                            data=self._file_chunker(
-                                filepath, start=start, end=end),
-                            headers=header,
-                            proxy=self._proxy,
-                        ) as resp:
+                        async with session.put(url,
+                                               data=self._file_chunker(filepath,
+                                                                       start=start,
+                                                                       end=end),
+                                               headers=header,
+                                               proxy=self._proxy, ) as resp:
                             if resp.status >= 400:
-                                _logger.warning(
-                                    f"Upload part '{filename}' part {part_number} to bucket {bucket} failed with status code {resp.status} and message '{await resp.text()}'"
-                                )
-                                raise Exception(
-                                    f"Bad status code {resp.status}")
+                                _logger.warning(f"Upload part '{filename}' part {part_number} to "
+                                                f"bucket {bucket} failed with statu"
+                                                f"s code {resp.status} and message '"
+                                                f"{await resp.text()}'")
+                                raise Exception(f"Bad status code {resp.status}")
                             etag = resp.headers.get("ETag")
-                            _logger.debug(
-                                f"{part_number} is done, etag {
-                                    etag}, chunksize {end - start}"
-                            )
+                            _logger.debug(f"{part_number} is done, etag {etag}, chunksize "
+                                          f"{end - start}")
                             return resp.headers.get("ETag")
             except Exception as e:
-                _logger.warning(
-                    f"Multipart upload {filename} part {
-                        part_number} failed, trying."
-                )
+                _logger.warning(f"Multipart upload {filename} part {part_number} failed, trying.")
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(3))
-    async def _multipart_complete(
-        self, bucket: str, filepath: str, upload_id: str, parts: dict[str, Any]
-    ):
+    async def _multipart_complete(self,
+                                  bucket: str,
+                                  filepath: str,
+                                  upload_id: str,
+                                  parts: dict[str, Any]):
         filename = os.path.basename(filepath)
-        url = f"https://s3.us.archive.org/{
-            bucket}/{filename}?uploadId={upload_id}"
+        url = f"https://s3.us.archive.org/{bucket}/{filename}?uploadId={upload_id}"
         xml = "<CompleteMultipartUpload>"
         for part in parts:
-            xml += f"<Part><PartNumber>{part['part_number']
-                                        }</PartNumber><ETag>{part['etag']}</ETag></Part>"
+            xml += (f"<Part><PartNumber>{part['part_number']}</PartNumber><ETag>"
+                    f"{part['etag']}</ETag></Part>")
         xml += "</CompleteMultipartUpload>"
 
         headers = self._default_headers | {"Content-Type": "application/xml"}
         async with aiohttp.ClientSession() as session:
             async with self._connection_semaphore:
-                async with session.post(
-                    url, data=xml, headers=headers, proxy=self._proxy
-                ) as resp:
+                async with session.post(url, data=xml, headers=headers, proxy=self._proxy) as resp:
+                    text = await resp.text()
+                    _logger.debug(f"Complete upload request resp : {text} with status "
+                                  f"{resp.status}")
                     if resp.status >= 400:
                         raise Exception(f"Bad status code {resp.status}")
-                    return await resp.text()
+                    return text
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(3))
     async def multipart_abort(self, bucket, filename, upload_id):
-        url = f"https://s3.us.archive.org/{
-            bucket}/{filename}?uploadId={upload_id}"
+        url = f"https://s3.us.archive.org/{bucket}/{filename}?uploadId={upload_id}"
         async with aiohttp.ClientSession() as session:
             async with self._connection_semaphore:
-                async with session.delete(
-                    url, proxy=self._proxy, headers=self._default_headers
-                ) as resp:
-                    _logger.info(
-                        f"Mulitpart upload aborted with msg : '{await resp.text()}'"
-                    )
+                async with session.delete(url,
+                                          proxy=self._proxy,
+                                          headers=self._default_headers) as resp:
+                    _logger.info(f"Mulitpart upload aborted with msg : '{await resp.text()}'")
                     if resp.status >= 400:
                         raise Exception(f"Bad status code {resp.status}")
                     return await resp.text()
 
-    async def mulitpart_upload_file(
-        self,
-        bucket: str,
-        filepath: str,
-        headers: dict[str, Any] = None,
-        chunk_size=1024**2 * 8,
-    ):
+    async def mulitpart_upload_file(self,
+                                    bucket: str,
+                                    filepath: str,
+                                    headers: dict[str, Any] = None,
+                                    chunk_size=1024 ** 2 * 8, ):
         filename = os.path.basename(filepath)
 
         upload_id = await self._multipart_init(bucket, filepath, headers)
@@ -408,60 +355,52 @@ class IAClient:
                 # etag = await self._multipart_upload_part(
                 #     bucket, filename, upload_id, part_num, chunk
                 # )
-                etag = await self._multipart_upload_part(
-                    bucket=bucket,
-                    filepath=filepath,
-                    upload_id=upload_id,
-                    part_number=part_num,
-                    start=start,
-                    end=end,
-                )
+                etag = await self._multipart_upload_part(bucket=bucket,
+                                                         filepath=filepath,
+                                                         upload_id=upload_id,
+                                                         part_number=part_num,
+                                                         start=start,
+                                                         end=end, )
                 parts.append({"part_number": part_num, "etag": etag})
                 part_num += 1
 
             await self._multipart_complete(bucket, filepath, upload_id, parts)
-            _logger.info(
-                f"Mulitpart upload '{
-                    filepath}' to bucket '{bucket}' finished.'"
-            )
+            _logger.info(f"Mulitpart upload '{filepath}' to bucket '{bucket}' finished.'")
         except Exception as e:
             try:
                 await self.multipart_abort(bucket, filename, upload_id)
             except Exception as f:  # there's nothing we can do about it
                 _logger.exception(f"Abort failed. {f}")
-            _logger.exception(
-                f"Error when multipart uploading file '{filepath}': {e}")
+            _logger.exception(f"Error when multipart uploading file '{filepath}': {e}")
             raise Exception("Multipart upload failed.")
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(3))
-    async def upload_file(
-        self, bucket: str, filepath: str, headers: dict[str, Any] | None = None
-    ):
+    async def upload_file(self, bucket: str, filepath: str, headers: dict[str, Any] | None = None):
         """
         Upload file to an exsiting bucket, or create a bucket then upload, depending on the headers
         """
-        url = f"https://s3.us.archive.org/{
-            bucket}/{os.path.basename(filepath)}"
+        url = f"https://s3.us.archive.org/{bucket}/{os.path.basename(filepath)}"
         if not headers:
             headers = self._default_headers
         headers |= {"Content-Length": str(os.path.getsize(filepath))}
 
         async with self._connection_semaphore:
             async with aiohttp.ClientSession() as session:
-                async with session.put(
-                    url,
-                    headers=headers,
-                    data=self._file_chunker(filepath),
-                    proxy=self._proxy,
-                ) as resp:
+                async with session.put(url,
+                                       headers=headers,
+                                       data=self._file_chunker(filepath),
+                                       proxy=self._proxy, ) as resp:
                     if resp.status >= 400:
                         raise Exception(f"Bad status code {resp.status}")
                     _logger.info(f"Successfully uploaded '{filepath}'.")
         return
 
-    async def download_file(
-        self, bucket: str, filename: str, output_dir: str, fast_get=False, attempts=3
-    ) -> str | None:
+    async def download_file(self,
+                            bucket: str,
+                            filename: str,
+                            output_dir: str,
+                            fast_get=False,
+                            attempts=3) -> str | None:
         """
         if fast_get is set to true, use ia web instead of s3. Maybe faster?
         """
@@ -469,11 +408,8 @@ class IAClient:
             os.makedirs(output_dir)
         filepath = os.path.join(output_dir, filename)
 
-        url = (
-            f"https://s3.us.archive.org/{bucket}/{filename}"
-            if not fast_get
-            else (f"https://archive.org/download/" f"{bucket}/{filename}")
-        )
+        url = (f"https://s3.us.archive.org/{bucket}/{filename}" if not fast_get else (
+            f"https://archive.org/download/" f"{bucket}/{filename}"))
 
         for _ in range(attempts):
             try:
@@ -486,15 +422,11 @@ class IAClient:
                                 await f.write(chunk)
                         return filepath
             except Exception as e:
-                _logger.warning(
-                    f"Download '{bucket}/{filename}' failed: '{e}', retrying."
-                )
+                _logger.warning(f"Download '{bucket}/{filename}' failed: '{e}', retrying.")
         else:
-            utils.log_error_and_raise(
-                _logger,
-                f"Download '{
-                    bucket}/{filename}' failed after {attempts} attempts.",
-            )
+            utils.log_error_and_raise(_logger,
+                                      f"Download '{bucket}/{filename}' failed after {attempts} "
+                                      f"attempts.", )
             os.remove(filepath)
             return None
 
@@ -518,52 +450,42 @@ class IAClient:
         resp["over_limit"] : int
         resp["detail"]["limit_reason"] : str
         """
-        url = (
-            f"https://s3.us.archive.org/?check_limit=1&"
-            f"accesskey={self._access_key}&bucket={bucket}"
-        )
+        url = (f"https://s3.us.archive.org/?check_limit=1&"
+               f"accesskey={self._access_key}&bucket={bucket}")
         async with aiohttp.ClientSession() as session:
             async with session.get(url, proxy=self._proxy) as resp:
                 if resp.status == 200:
                     return await resp.json()
-                utils.log_error_and_raise(
-                    _logger, f"Check limits failed with status {resp.status}"
-                )
+                utils.log_error_and_raise(_logger, f"Check limits failed with status {resp.status}")
                 return None
 
-    async def verify_bucket(
-        self,
-        bucket: str,
-        filepaths: list[str] = None,
-        md5_dict: dict[str, str] = None,
-        timeout=180,
-    ) -> list[str]:
+    async def verify_bucket(self,
+                            bucket: str,
+                            filepaths: list[str] = None,
+                            md5_dict: dict[str, str] = None,
+                            timeout=180, ) -> tuple[list[str], dict]:
         """
         Verify each file in filepaths is present and has same checksum in the bucket.
         Returns filepaths in the bucket that either not exist or differ from local files.
+        Also return the metainfo from ia.
 
         Will use md5_dict if provided, otherwise will calculate md5 for each file in filepaths.
         """
         if not filepaths and not md5_dict:
-            utils.log_error_and_raise(
-                _logger, "No filepaths or md5_dict provided.")
+            utils.log_error_and_raise(_logger, "No filepaths or md5_dict provided.")
 
         if md5_dict:
             md5_items = md5_dict.items()
             filepaths = [item[0] for item in md5_items]
             files_local_hash = [item[1] for item in md5_items]
         else:
-            files_local_hash = await asyncio.gather(
-                *(utils.async_hash(filepath) for filepath in filepaths)
-            )
+            files_local_hash = await asyncio.gather(*(utils.async_hash(filepath) for filepath in
+                                                      filepaths))
 
         if not await self.head_bucket(bucket):
-            return filepaths
+            return filepaths, {}
 
-        _logger.debug(
-            f"Verifying bucket {
-                bucket}, wait up to {timeout} seconds."
-        )
+        _logger.debug(f"Verifying bucket {bucket}, wait up to {timeout} seconds.")
         start_time = asyncio.get_running_loop().time()
         empty_json = True
         while asyncio.get_running_loop().time() - start_time < timeout:
@@ -576,17 +498,12 @@ class IAClient:
                 empty_json = False
             try:
                 files_bucket_hash = [d["md5"] for d in info["files"]]
-                result = [
-                    filepaths[idx]
-                    for idx, local_hash in enumerate(files_local_hash)
-                    if local_hash not in files_bucket_hash
-                ]
+                result = [filepaths[idx] for idx, local_hash in enumerate(files_local_hash) if
+                          local_hash not in files_bucket_hash]
 
-                if result == [] or (
-                    result != []
-                    and ("pending_tasks" not in info or info["pending_tasks"] == False)
-                ):
-                    return result
+                if result == [] or (result != [] and (
+                        "pending_tasks" not in info or info["pending_tasks"] == False)):
+                    return result, info['metadata']
             except KeyError:
                 _logger.debug("Pending tasks not found in info.")
                 _logger.debug(info)
@@ -615,34 +532,26 @@ async def main():
     # 2. Upload it using multipart upload to the 'test_collection' bucket
 
     config = utils.read_config()
-    async with IAClient(
-        access_key=config["ia"]["s3_access_key"],
-        secret_key=config["ia"]["s3_secret_key"],
-    ) as client:
-        # Use random bucket name to avoid conflicts for every test run
-        bucket = "testbucket-" + \
-            "".join(random.choices(string.ascii_lowercase, k=10))
-
-        limits = await client.check_limits(bucket)
-        pprint(limits)
-        print(f"Using bucket: {bucket}")
-
-        print("Starting multipart upload...")
-        await client.create_bucket(
-            bucket=bucket,
-            filepaths=[dummy_path],
-            meta_mediatype="data",
-            meta_title="Testzip expire after 30 days",
-            meta_description="I'm trying the mulitpart uploading feature so large files won't break easily.",
-            meta_collection="test_collection",
-            multipart=True,
-        )
-
-        print("Upload complete. Verifying upload...")
-
-        info = await client.get_info(bucket)
-        print("Bucket info:")
-        print(info)
+    async with IAClient(access_key=config["ia"]["s3_access_key"],
+                        secret_key=config["ia"]["s3_secret_key"], ) as client:
+        bucket = "nvgpu_NVIDIA-GRID-Linux-KVM-535.161.05-535.161.07-538.33.zip"
+        res = await client.get_info(bucket)
+        pprint(res)
+        return  # # Use random bucket name to avoid conflicts for every test run  # bucket =  #
+        # "testbucket-" + "".join(random.choices(string.ascii_lowercase, k=10))  #  # limits =  #
+        # await client.check_limits(bucket)  # pprint(limits)  # print(f"Using bucket: {bucket}")
+        #  # print("Starting multipart upload...")  # await client.create_bucket(bucket=bucket,
+        #                            filepaths=[dummy_path],  #  #  #
+        #                            meta_mediatype="data",  #  #  #
+        #                            meta_title="Testzip expire after 30 days",  #  #  #
+        #                            meta_description="I'm trying the mulitpart uploading feature
+        #                            "  #                                             "so large
+        #                            files won't "  #  #                            "break  #
+        #                            easily.",  #  #  #
+        #                            meta_collection="test_collection",  #  #  #
+        #                            multipart=True, )  #  # print("Upload complete. Verifying  #
+        #                            upload...")  #  # info = await client.get_info(bucket)  #  #
+        #                            print("Bucket info:")  # print(info)
 
 
 if __name__ == "__main__":
