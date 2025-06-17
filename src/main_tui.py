@@ -22,8 +22,7 @@ class CounterColumn(ProgressColumn):
 
     def render(self, task: Task) -> Text:
         count = self.get_value()
-        if self.bytes_conv:
-            count = utils.human_readable_size_str(count, long=False)
+        if self.bytes_conv: count = utils.human_readable_size_str(count, long=False)
         return Text(f"{self.label} {count}", style=self.color)
 
 
@@ -79,51 +78,33 @@ incomplete_counter = utils.AsyncCounter()
 not_verified_counter = utils.AsyncCounter()
 
 indicator_column = VarTextColumn("Running", "green")
-complete_column = CounterColumn(
-    complete_counter.get_value, label="✔", color="bright_green"
-)
-incomplete_column = CounterColumn(
-    incomplete_counter.get_value, label="✗", color="bright_red"
-)
-not_verified_column = CounterColumn(
-    not_verified_counter.get_value, label="?", color="bright_yellow"
-)
-coroutines_column = CounterColumn(
-    utils.count_active_coroutines, label="Coroutines", color="cyan"
-)
+complete_column = CounterColumn(complete_counter.get_value, label="✔", color="bright_green")
+incomplete_column = CounterColumn(incomplete_counter.get_value, label="✗", color="bright_red")
+not_verified_column = CounterColumn(not_verified_counter.get_value, label="?", color="bright_yellow")
+coroutines_column = CounterColumn(utils.count_active_coroutines, label="Coroutines", color="cyan")
 threads_column = CounterColumn(threading.active_count, label="Threads", color="yellow")
-mem_column = CounterColumn(
-    utils.get_memory_usage, label="Mem", color="magenta", bytes_conv=True
-)
-download_speed_column = SpeedColumnBase(
-    get_value=lambda: AsyncChunkDownloader.global_bytes_downloaded,
-    icon="⬇",
-    color="green",
-)
-upload_speed_column = SpeedColumnBase(
-    get_value=lambda: IAClient.global_bytes_uploaded, icon="⬆", color="blue"
-)
+mem_column = CounterColumn(utils.get_memory_usage, label="Mem", color="magenta", bytes_conv=True)
+download_speed_column = SpeedColumnBase(get_value=lambda: AsyncChunkDownloader.global_bytes_downloaded,
+                                        icon="⬇",
+                                        color="green", )
+upload_speed_column = SpeedColumnBase(get_value=lambda: IAClient.global_bytes_uploaded, icon="⬆", color="blue")
 
 # upper progress bar
-progress_bar = Progress(
-    indicator_column,
-    BarColumn(),
-    TextColumn("{task.completed}/{task.total}"),
-    not_verified_column,
-    complete_column,
-    incomplete_column,
-    refresh_per_second=10,
-    transient=True,
-)
+progress_bar = Progress(indicator_column,
+                        BarColumn(),
+                        TextColumn("{task.completed}/{task.total}"),
+                        not_verified_column,
+                        complete_column,
+                        incomplete_column,
+                        refresh_per_second=10,
+                        transient=True, )
 
-status_bar = Progress(
-    download_speed_column,
-    upload_speed_column,
-    TextColumn("[bold]|[/bold]"),
-    threads_column,
-    coroutines_column,
-    mem_column,
-)
+status_bar = Progress(download_speed_column,
+                      upload_speed_column,
+                      TextColumn("[bold]|[/bold]"),
+                      threads_column,
+                      coroutines_column,
+                      mem_column, )
 progress_bar_task = progress_bar.add_task("Processing", total=0, start=False)
 status_bar_task = status_bar.add_task("Status", total=0, start=False)
 

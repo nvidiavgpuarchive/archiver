@@ -10,13 +10,8 @@ from typing import TypedDict
 
 from pony.orm import db_session, select
 
-from db import (
-    ArchiveEntry,
-    DriverMeta,
-    FileChecksum,
-    VerificationState,
-    sync_meta_to_db,
-)
+from db import (ArchiveEntry, DriverMeta, FileChecksum, VerificationState,
+                sync_meta_to_db)
 from gmail_client import GmailClient
 from logger import get_logger
 from main_tui import *
@@ -36,7 +31,7 @@ ctrl_c_counter = 0
 
 
 class TaskDict(TypedDict):
-    meta: MetaInfo
+    meta: DriverMeta
     download: DownloadInfo
 
 
@@ -104,7 +99,7 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
     while not shutdown_event.is_set():
         try:
             task: TypedDict = await asyncio.wait_for(queue.get(), timeout=1)
-            _logger.info(f"Got task: '{task["meta"]["description"]}'")
+            _logger.info(f"Got task: '{task["meta"].description}'")
             worker_states[f"{worker_id}"] = "busy"
         except asyncio.TimeoutError:
             worker_states[f"{worker_id}"] = "idle"
@@ -152,7 +147,10 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                         filepath_list.append(checksum_filepath)
             except Exception as e:
                 await fail_counter.increment()
-                _logger.warning(f"Download failed with exception '{str(e)}', skipping.")
+                _logger.warning(
+                    f"Download failed with exception '{
+                        str(e)}', skipping."
+                )
                 continue
 
             # check if all files exist first
@@ -190,10 +188,14 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
             main_checksum_d = hash_dict[main_filename]  # dict[str, str]
 
             if await crc_task:
-                _logger.info(f"CRC checksum passed. '{main_filename}' is good.")
+                _logger.info(
+                    f"CRC checksum passed. '{
+                        main_filename}' is good."
+                )
             else:
                 _logger.error(
-                    f"CRC checksum failed, '{main_filename}' corrupted. Skipping"
+                    f"CRC checksum failed, '{
+                        main_filename}' corrupted. Skipping"
                 )
                 await fail_counter.increment()
                 continue
@@ -207,7 +209,7 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                     + utils.text_to_html_code_block("\n".join(file_list))
                     + "<br><hr>"
                 )
-            custom_metadata = task["meta"] | {
+            custom_metadata = task["meta"].to_json() | {
                 "checksum-" + k: v for k, v in main_checksum_d.items()
             }
             custom_metadata["description"] = ia_description
@@ -226,11 +228,9 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                 bucket_name = config["ia"]["bucket_prefix"] + main_filename
                 if await ia.head_bucket(bucket_name):
                     info = await ia.get_info(bucket_name)
-                    if info["metadata"]["downloadid"] != task["meta"]["downloadId"]:
+                    if info["metadata"]["downloadid"] != task["meta"].downloadId:
                         _logger.warning(
-                            f"{bucket_name} conflicted, downloadId mismatch, "
-                            f"skip.\nRequested: {task['meta']["downloadId"]}, "
-                            f"IA: {info['metadata']['downloadId']}"
+                            f"{bucket_name} conflicted, downloadId mismatch, skip."
                         )
                         await asyncio.to_thread(utils.remove_files, filepath_list)
                         continue
@@ -240,12 +240,13 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                         bucket=bucket_name,
                         filepaths=filepath_list,
                         meta_mediatype="data",
-                        meta_title=task["meta"]["description"],
+                        meta_title=task["meta"].description,
                         meta_description=ia_description,
                         meta_collection=config["ia"]["collection"],
                         # open_source_software, test_collection
                         custom_metadata=custom_metadata,
-                        multipart=os.path.getsize(main_filepath) > 1024**2 * 256,
+                        multipart=os.path.getsize(
+                            main_filepath) > 1024**2 * 256,
                     )
                 except Exception as e:
                     await fail_counter.increment()
@@ -266,7 +267,8 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                     existing_entry = ArchiveEntry.get(identifier=bucket_name)
                 if not existing_entry:  # if existing, simply wait for verification
                     with db_session():
-                        main_dbentry = FileChecksum.get(md5=main_checksum_d["md5"])
+                        main_dbentry = FileChecksum.get(
+                            md5=main_checksum_d["md5"])
                         if main_dbentry:
                             main_dbentry.update_from_hash_dict(
                                 main_filepath, main_checksum_d
@@ -276,9 +278,11 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                                 main_filepath, main_checksum_d
                             )
 
-                        meta = DriverMeta.get(downloadId=task["meta"]["downloadId"])
+                        meta = DriverMeta.get(
+                            downloadId=task["meta"].downloadId)
 
-                        archive_entry = ArchiveEntry.get(identifier=bucket_name)
+                        archive_entry = ArchiveEntry.get(
+                            identifier=bucket_name)
                         if archive_entry:
                             archive_entry.meta = meta
                             archive_entry.files = [main_dbentry]
@@ -294,7 +298,7 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                             )
 
             await asyncio.to_thread(_update_db)
-            _logger.info(f"'ArchiveEntry {bucket_name}' updated in db.")
+            _logger.info(f"'{bucket_name}' updated in db.")
 
             if fail_counter.value > 0:
                 await fail_counter.decrement()  # reduce consequtive fail count
@@ -332,10 +336,16 @@ async def verification_worker(config, delay=10, n=8):
                 for a in ArchiveEntry
                 if a.verificationState == VerificationState.NOT_VERIFIED
             ).count()
-            _logger.debug(f"Verification worker running, {unverified_cnt} to verify.")
+            _logger.debug(
+                f"Verification worker running, {
+                    unverified_cnt} to verify."
+            )
 
             if asyncio.get_event_loop().time() - last_report_time > 30:
-                _logger.info(f"Verification running, {unverified_cnt} waiting.")
+                _logger.info(
+                    f"Verification running, {
+                        unverified_cnt} waiting."
+                )
                 last_report_time = asyncio.get_event_loop().time()
 
             if not unverified_cnt:
@@ -384,7 +394,8 @@ async def verification_worker(config, delay=10, n=8):
                     )
                     toverify_archives[idx].ia_meta = ia_meta
                 _logger.info(
-                    f"Bucket '{toverify_archives[idx].identifier}' verified to be "
+                    f"Bucket '{
+                        toverify_archives[idx].identifier}' verified to be "
                     f"{not bool(result_fl)}"
                 )
 
@@ -421,7 +432,8 @@ def signal_handler(_, frame):
                 traceback.print_stack(frame, file=f)
             _logger.warning(f"Crash log saved to '{crash_file}'")
         except Exception as e:
-            _logger.warning("Another exception occurred when trying to write log.")
+            _logger.warning(
+                "Another exception occurred when trying to write log.")
             print(e)
             _logger.warning("Quit without saving the log.")
             pass  # If we can't write the crash log, just exit
@@ -467,7 +479,8 @@ async def main():
         )
         for i in range(config["global"]["num_workers"])
     ]
-    async_verification = asyncio.create_task(verification_worker(config, delay=10, n=8))
+    async_verification = asyncio.create_task(
+        verification_worker(config, delay=10, n=8))
     async_ui_thread = utils.run_async_in_thread(ui_worker(config))
 
     # main routine
@@ -485,18 +498,19 @@ async def main():
     )
     asyncio.create_task(gmail_client.connect())
 
-    downloadId_added_list: list[str] = []  # meta that already queued
+    meta_added_list: list[MetaInfo] = []  # meta that already queued
 
     try:
         await portal.load_session_from_cookies()
-        while fail_counter.value < 100:  # hardcoded for now
+        while fail_counter.value < 5:  # hardcoded for now
             await asyncio.sleep(1)
             if not await portal.is_loggedin():  # login and refresh download list
                 await portal.login()
                 sync_meta_to_db(await portal.list_meta())
 
             idle_cnt = len(
-                [k for k, v in worker_states.items() if k.isnumeric() and v == "idle"]
+                [k for k, v in worker_states.items() if k.isnumeric()
+                 and v == "idle"]
             )
             if not idle_cnt:
                 continue
@@ -518,16 +532,10 @@ async def main():
                         a.meta for a in incomplete_archives
                     ] + unarchived_metas
                     meta_to_download = [
-                        m.to_json() for m in meta_to_download
-                    ]  # conv to dict
-                    meta_to_download = [
-                        m
-                        for m in meta_to_download
-                        if m["downloadId"] not in downloadId_added_list
+                        m for m in meta_to_download if m not in meta_added_list
                     ]
-                    return meta_to_download
 
-            meta_to_download = await asyncio.to_thread(_db_task)
+            await asyncio.to_thread(_db_task)
 
             # TODO: ui worker report each worker state periodically
             if not meta_to_download or not config["global"]["num_workers"]:
@@ -537,24 +545,26 @@ async def main():
                     indicator_column.update("Verifying", "bright_yellow")
 
             try:
-                meta_to_queue = meta_to_download[: min(len(meta_to_download), idle_cnt)]
+                meta_to_queue = meta_to_download[: min(
+                    len(meta_to_download), idle_cnt)]
                 download_to_queue = await asyncio.gather(
-                    *(portal.get_download_url(m["downloadId"]) for m in meta_to_queue)
+                    *(portal.get_download_url(m.downloadId) for m in meta_to_queue)
                 )
             except Exception as e:
                 await fail_counter.increment()
                 _logger.warning(
-                    f"Failed to get download url with exception '{str(e)}', retrying."
+                    f"Failed to get download url with exception '{
+                        str(e)}', retrying."
                 )
                 continue
 
             for meta, download in zip(meta_to_queue, download_to_queue):
                 if not download:
                     continue
-                downloadId_added_list.append(meta)
+                meta_added_list.append(meta)
                 task: TaskDict = {"meta": meta, "download": download}
                 await queue.put(task)
-                _logger.info(f"Task '{meta["description"]}' queued.")
+                _logger.info(f"Task '{meta.description}' queued.")
 
             worker_states = {k: "busy" for k in worker_states if k.isnumeric()}
 
