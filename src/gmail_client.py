@@ -69,8 +69,7 @@ class GmailClient:
             self._trashbox_name = [k for k, v in mailbox_list.items() if "trash" in v][
                 0
             ]
-            self._junkbox_name = [
-                k for k, v in mailbox_list.items() if "junk" in v][0]
+            self._junkbox_name = [k for k, v in mailbox_list.items() if "junk" in v][0]
 
         _logger.info(f"Logged in to IMAP server '{self._host}:{self._port}'")
 
@@ -87,8 +86,7 @@ class GmailClient:
         result = []
         for mailbox in ["INBOX", self._junkbox_name]:
             await self._imap_client.select(mailbox)
-            criteria = ("FROM", sender) if not unseen else (
-                "FROM", sender, "UNSEEN")
+            criteria = ("FROM", sender) if not unseen else ("FROM", sender, "UNSEEN")
             _, data = await self._imap_client.search(*criteria)
             result += [(mailbox, eid) for eid in data[0].split()]
         return result

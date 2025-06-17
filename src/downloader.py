@@ -82,8 +82,7 @@ class AsyncChunkDownloader:
             final_path = await self._basic_download()
             return final_path
         else:  # chunked downloading
-            chunks = utils.divide_into_chunks(
-                self._total_bytes, self._num_chunks)
+            chunks = utils.divide_into_chunks(self._total_bytes, self._num_chunks)
             _logger.info(
                 f"Downloading '{self._filename}' with {
                     self._num_chunks} chunks,"
@@ -182,8 +181,7 @@ class AsyncChunkDownloader:
 
                         # get filename if avail
                         filename = None
-                        content_disp = resp.headers.get(
-                            "Content-Disposition", "")
+                        content_disp = resp.headers.get("Content-Disposition", "")
                         if "filename" in content_disp:
                             match = re.search(
                                 r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';]+)',
@@ -244,8 +242,7 @@ class AsyncChunkDownloader:
         else:
             if os.path.exists(final_filepath):
                 os.remove(final_filepath)  # clean up if failed
-            utils.log_error_and_raise(
-                _logger, f"Failed to download {final_filepath}")
+            utils.log_error_and_raise(_logger, f"Failed to download {final_filepath}")
             return None
 
     async def _chunk_download(

@@ -22,8 +22,10 @@ FILE_SIZES = [
 
 def run_http_server(directory, port, stop_event: threading.Event, ranged_support=True):
     os.chdir(directory)
-    handler = RangeRequestHandler if ranged_support else http.server.SimpleHTTPRequestHandler
-    httpd = http.server.ThreadingHTTPServer(('localhost', port), handler)
+    handler = (
+        RangeRequestHandler if ranged_support else http.server.SimpleHTTPRequestHandler
+    )
+    httpd = http.server.ThreadingHTTPServer(("localhost", port), handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     stop_event.wait()
@@ -34,7 +36,9 @@ def run_http_server(directory, port, stop_event: threading.Event, ranged_support
 def start_server(tempdir, ranged_support=True):
     stop_event = threading.Event()
     port = utils.find_free_port()
-    server_thread = threading.Thread(target=run_http_server, args=(tempdir, port, stop_event, ranged_support))
+    server_thread = threading.Thread(
+        target=run_http_server, args=(tempdir, port, stop_event, ranged_support)
+    )
     server_thread.start()
     time.sleep(1)  # wait for server
     return port, stop_event, server_thread
@@ -57,7 +61,11 @@ async def run_test(url, source_file):
         output_file = await downloader.download()
         await downloader.close()
 
-        files = [f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))]
+        files = [
+            f
+            for f in os.listdir(output_dir)
+            if os.path.isfile(os.path.join(output_dir, f))
+        ]
         assert len(files) == 1, f"Expected 1 file, found {len(files)}: {files}"
         assert os.path.isfile(output_file)
         assert filecmp.cmp(source_file, output_file)

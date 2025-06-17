@@ -1,13 +1,12 @@
 global:
-  download_dir: "/path/to/download/dir/"
-  https_proxy: "http://your.proxy.address:port"
-  num_workers: 4 # optimal is 8
-  num_tasks: 0 # complete this number of tasks and then exit, -1 to run indefinitely
-  hashing_method: "sync" # sync / async sync is faster but consumes a lot more mem
+  download_dir: "/tmp/testdir"
+  https_proxy: ""
+  num_workers: 1 # optimal is 8
+  num_tasks: -1 # complete this number of tasks and then exit, -1 to run indefinitely
 
 portal:
-  nvidia_username: "someone@example.com"
-  nvidia_password: "your_nvidia_password_here"
+  nvidia_username: "example_username"
+  nvidia_password: "example_password"
 
 downloader:
   num_chunks: 32
@@ -15,18 +14,18 @@ downloader:
 imap: # currently only gmail is supported
   host: "imap.gmail.com"
   port: 993
-  username: "someone@example.com"
-  password: "your_imap_password_here"
+  username: "example_email@gmail.com"
+  password: "example_password"
 
 ia:
-  s3_access_key: "your_s3_access_key_here"
-  s3_secret_key: "your_s3_secret_key_here"
-  bucket_prefix: "nvgpu_test_"
-  collection: "test_collection"
+  s3_access_key: "example_s3_access_key"
+  s3_secret_key: "example_s3_secret_key"
+  bucket_prefix: "nvgpu_"
+  collection: "open_source_software" # test_collection
   common_description: |
     <p>This item contains a specific version of the NVIDIA vGPU driver for a particular platform, preserved for archival and reference purposes only. You can find metadata for this item below and download options to the right.</p>
     <p><i>Downloading via torrent is encouraged.</i></p>
     <p>For more information about this project and a complete list of all archived drivers, please visit <a href="https://github.com/nvidiavgpuarchive/hub" target="_blank" rel="noopener">nvidiavgpuarchive/hub</a>.</p>
     <hr>
-  force_uploading: True # if true try to uploda to bucket no matter it exists or not
+  force_uploading: True # if true try to upload to bucket no matter it exists or not
   use_proxy: False # using proxy may cause frequent large file upload timeout
