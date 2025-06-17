@@ -10,8 +10,13 @@ from typing import TypedDict
 
 from pony.orm import db_session, select
 
-from db import (ArchiveEntry, DriverMeta, FileChecksum, VerificationState,
-                sync_meta_to_db)
+from db import (
+    ArchiveEntry,
+    DriverMeta,
+    FileChecksum,
+    VerificationState,
+    sync_meta_to_db,
+)
 from gmail_client import GmailClient
 from logger import get_logger
 from main_tui import *
@@ -245,8 +250,7 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                         meta_collection=config["ia"]["collection"],
                         # open_source_software, test_collection
                         custom_metadata=custom_metadata,
-                        multipart=os.path.getsize(
-                            main_filepath) > 1024**2 * 256,
+                        multipart=os.path.getsize(main_filepath) > 1024**2 * 256,
                     )
                 except Exception as e:
                     await fail_counter.increment()
@@ -267,8 +271,7 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                     existing_entry = ArchiveEntry.get(identifier=bucket_name)
                 if not existing_entry:  # if existing, simply wait for verification
                     with db_session():
-                        main_dbentry = FileChecksum.get(
-                            md5=main_checksum_d["md5"])
+                        main_dbentry = FileChecksum.get(md5=main_checksum_d["md5"])
                         if main_dbentry:
                             main_dbentry.update_from_hash_dict(
                                 main_filepath, main_checksum_d
@@ -278,11 +281,9 @@ async def worker(worker_id: int, config: dict, queue: asyncio.Queue):
                                 main_filepath, main_checksum_d
                             )
 
-                        meta = DriverMeta.get(
-                            downloadId=task["meta"].downloadId)
+                        meta = DriverMeta.get(downloadId=task["meta"].downloadId)
 
-                        archive_entry = ArchiveEntry.get(
-                            identifier=bucket_name)
+                        archive_entry = ArchiveEntry.get(identifier=bucket_name)
                         if archive_entry:
                             archive_entry.meta = meta
                             archive_entry.files = [main_dbentry]
@@ -432,8 +433,7 @@ def signal_handler(_, frame):
                 traceback.print_stack(frame, file=f)
             _logger.warning(f"Crash log saved to '{crash_file}'")
         except Exception as e:
-            _logger.warning(
-                "Another exception occurred when trying to write log.")
+            _logger.warning("Another exception occurred when trying to write log.")
             print(e)
             _logger.warning("Quit without saving the log.")
             pass  # If we can't write the crash log, just exit
@@ -479,8 +479,7 @@ async def main():
         )
         for i in range(config["global"]["num_workers"])
     ]
-    async_verification = asyncio.create_task(
-        verification_worker(config, delay=10, n=8))
+    async_verification = asyncio.create_task(verification_worker(config, delay=10, n=8))
     async_ui_thread = utils.run_async_in_thread(ui_worker(config))
 
     # main routine
@@ -509,8 +508,7 @@ async def main():
                 sync_meta_to_db(await portal.list_meta())
 
             idle_cnt = len(
-                [k for k, v in worker_states.items() if k.isnumeric()
-                 and v == "idle"]
+                [k for k, v in worker_states.items() if k.isnumeric() and v == "idle"]
             )
             if not idle_cnt:
                 continue
@@ -545,8 +543,7 @@ async def main():
                     indicator_column.update("Verifying", "bright_yellow")
 
             try:
-                meta_to_queue = meta_to_download[: min(
-                    len(meta_to_download), idle_cnt)]
+                meta_to_queue = meta_to_download[: min(len(meta_to_download), idle_cnt)]
                 download_to_queue = await asyncio.gather(
                     *(portal.get_download_url(m.downloadId) for m in meta_to_queue)
                 )

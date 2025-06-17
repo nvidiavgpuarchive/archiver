@@ -38,8 +38,10 @@ class MetaInfo(TypedDict):
 
 
 def same_meta(meta1: MetaInfo, meta2: MetaInfo):
-    return (meta1["downloadId"] == meta2["downloadId"] or meta1["description"] == meta2[
-        "description"])
+    return (
+        meta1["downloadId"] == meta2["downloadId"]
+        or meta1["description"] == meta2["description"]
+    )
 
 
 class DownloadInfo(TypedDict):
@@ -54,12 +56,14 @@ class NvidiaWebPortal:
 
     """
 
-    def __init__(self,
-                 username: str,
-                 password: str,
-                 gmail_client: GmailClient,
-                 https_proxy: str | None = None,
-                 remote_playwright_link: str | None = None, ):
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        gmail_client: GmailClient,
+        https_proxy: str | None = None,
+        remote_playwright_link: str | None = None,
+    ):
         self._https_proxy = https_proxy
         self._username = username
         self._password = password
@@ -73,8 +77,10 @@ class NvidiaWebPortal:
     async def list_meta(self) -> Optional[List[MetaInfo]]:
         orgname = self._userinfo["user"]["orgName"]
         vgroup_id = self._virtual_groups["virtualGroups"][0]["id"]
-        url = (f"https://api.licensing.nvidia.com/v1/org/{orgname}/virtual-groups/"
-               f"{vgroup_id}/downloads")
+        url = (
+            f"https://api.licensing.nvidia.com/v1/org/{orgname}/virtual-groups/"
+            f"{vgroup_id}/downloads"
+        )
         data = {"downloadsFetch": {}}
 
         async with self._session.post(url, json=data, proxy=self._https_proxy) as resp:
@@ -82,16 +88,19 @@ class NvidiaWebPortal:
                 json_data = await resp.json()
                 return json_data["downloads"]
             else:
-                utils.log_error_and_raise(_logger,
-                                          f"List downloads request failed with status "
-                                          f"{resp.status}", )
+                utils.log_error_and_raise(
+                    _logger,
+                    f"List downloads request failed with status " f"{resp.status}",
+                )
                 return None
 
     async def get_download_url(self, download_id: str) -> Optional[DownloadInfo]:
         orgname = self._userinfo["user"]["orgName"]
         vgroup_id = self._virtual_groups["virtualGroups"][0]["id"]
-        url = (f"https://api.licensing.nvidia.com/v1/org/{orgname}/virtual-"
-               f"groups/{vgroup_id}/download/url")
+        url = (
+            f"https://api.licensing.nvidia.com/v1/org/{orgname}/virtual-"
+            f"groups/{vgroup_id}/download/url"
+        )
         data = {"downloadId": [download_id]}
 
         async with self._session.post(url, json=data, proxy=self._https_proxy) as resp:
@@ -99,9 +108,10 @@ class NvidiaWebPortal:
                 json_data = await resp.json()
                 return json_data["downloadUrls"][0]
             else:
-                utils.log_error_and_raise(_logger,
-                                          f"Get download url request failed with status "
-                                          f"{resp.status}", )
+                utils.log_error_and_raise(
+                    _logger,
+                    f"Get download url request failed with status " f"{resp.status}",
+                )
                 return None
 
     async def is_loggedin(self) -> bool:
@@ -117,43 +127,61 @@ class NvidiaWebPortal:
         Also serves as a healthcheck, returns True if both fetches succeed.
         """
         userinfo_url = "https://api.licensing.nvidia.com/v1/users/me"
-        vgroups_url_tmpl = ("https://api.licensing.nvidia.com/v1/org/{orgname}/virtual-groups")
+        vgroups_url_tmpl = (
+            "https://api.licensing.nvidia.com/v1/org/{orgname}/virtual-groups"
+        )
         async with self._session.get(userinfo_url, proxy=self._https_proxy) as resp:
             if resp.status == 200:
                 info = await resp.json()
                 orgname = info["user"]["orgName"]
-                async with self._session.get(vgroups_url_tmpl.format(orgname=orgname),
-                                             proxy=self._https_proxy) as v_resp:
+                async with self._session.get(
+                    vgroups_url_tmpl.format(orgname=orgname), proxy=self._https_proxy
+                ) as v_resp:
                     if v_resp.status == 200:
                         self._userinfo = info
                         self._virtual_groups = await v_resp.json()
                         return
-                    _logger.error(f"Get virtual groups failed with status code {v_resp.status}.")
-                    utils.log_error_and_raise(_logger,
-                                              f"Get virtual groups request failed with status "
-                                              f"{v_resp.status}", )
-            utils.log_error_and_raise(_logger,
-                                      f"Update userinfo request failed with status {resp.status}", )
+                    _logger.error(
+                        f"Get virtual groups failed with status code {v_resp.status}."
+                    )
+                    utils.log_error_and_raise(
+                        _logger,
+                        f"Get virtual groups request failed with status "
+                        f"{v_resp.status}",
+                    )
+            utils.log_error_and_raise(
+                _logger,
+                f"Update userinfo request failed with status {resp.status}",
+            )
 
     async def login(self, debug=False):
         login_url = "https://nvid.nvidia.com/login"
         _logger.info("Authenticating to Nvidia...")
 
-        if self._https_proxy and ((
-                                          not self._https_proxy.startswith("https://") and not
-                                  self._https_proxy.startswith(
-                                      "http://")) or ":" not in self._https_proxy):
+        if self._https_proxy and (
+            (
+                not self._https_proxy.startswith("https://")
+                and not self._https_proxy.startswith("http://")
+            )
+            or ":" not in self._https_proxy
+        ):
             _logger.error("https proxy must in format 'http(s)://<host>:<port>'")
-            utils.log_error_and_raise(_logger, f"Invalid proxy format {self._https_proxy}")
+            utils.log_error_and_raise(
+                _logger, f"Invalid proxy format {self._https_proxy}"
+            )
         proxy_options = None if not self._https_proxy else {"server": self._https_proxy}
 
         async with async_playwright() as p:
             if self._remote_playwright_link:
                 browser = await p.chromium.connect(self._remote_playwright_link)
-                _logger.info(f"Connected to remote playwright instance "
-                             f"{self._remote_playwright_link}")
+                _logger.info(
+                    f"Connected to remote playwright instance "
+                    f"{self._remote_playwright_link}"
+                )
             else:
-                browser = await p.chromium.launch(headless=not debug, proxy=proxy_options)
+                browser = await p.chromium.launch(
+                    headless=not debug, proxy=proxy_options
+                )
                 _logger.info("Launched local playwright instance.")
 
             context = await browser.new_context()
@@ -168,7 +196,9 @@ class NvidiaWebPortal:
                 _logger.debug("No cookies button, skip.")
 
             # email and password
-            await page.get_by_role("textbox", name="please enter email").fill(self._username)
+            await page.get_by_role("textbox", name="please enter email").fill(
+                self._username
+            )
             await page.get_by_role("button", name="Sign In").click()
             await page.wait_for_url("https://login.nvgs.nvidia.com/v1/login/password**")
             await page.get_by_role("textbox", name="Password").fill(self._password)
@@ -180,7 +210,8 @@ class NvidiaWebPortal:
             urls = {
                 "success": "https://ui.licensing.nvidia.com",
                 "email_verification": "https://login.nvgs.nvidia.com/v1/nfactor/email-auth-wait"
-                                      "**", }
+                "**",
+            }
             for _ in range(3):
                 try:
                     tag = await utils.playwright_wait_for_any(page, urls, timeout=30)
@@ -189,7 +220,9 @@ class NvidiaWebPortal:
 
                 if tag == "success":
                     try:
-                        await page.wait_for_selector("span.button-text", state="visible")
+                        await page.wait_for_selector(
+                            "span.button-text", state="visible"
+                        )
                         _logger.info("Successfully logged in.")
                         break
                     except Exception:
@@ -218,8 +251,9 @@ class NvidiaWebPortal:
             await context.close()
 
             try:
-                sub_end_date = self._virtual_groups["virtualGroups"][0]["entitlements"][0][
-                    "entitlementProductKeys"][0]["entitlementFeatures"][0]["endDate"]
+                sub_end_date = self._virtual_groups["virtualGroups"][0]["entitlements"][
+                    0
+                ]["entitlementProductKeys"][0]["entitlementFeatures"][0]["endDate"]
                 _logger.info("Current subscription ends at %s", sub_end_date)
             except (KeyError, IndexError):
                 _logger.warning("Cannot get virtual groups entitlements ending date.")
@@ -236,8 +270,10 @@ class NvidiaWebPortal:
         """
 
         nvidia_sender_email = "account@nvidia.com"
-        nvidia_veri_link_re = (r"https://accounts\.nvgs\.nvidia\.com/api/1/message/VerifyEmail\?q"
-                               r"=[\w\.\-]+")
+        nvidia_veri_link_re = (
+            r"https://accounts\.nvgs\.nvidia\.com/api/1/message/VerifyEmail\?q"
+            r"=[\w\.\-]+"
+        )
 
         _logger.info(f"Waiting for verification email up to {timeout} seconds.")
 
@@ -245,8 +281,10 @@ class NvidiaWebPortal:
         while time.time() < start_time + timeout:
             await asyncio.sleep(1)
             eid_tuples = await self._gmail_client.search_for(nvidia_sender_email)
-            mail_data_list = [await self._gmail_client.get_mail(eid, mailbox) for mailbox, eid in
-                              eid_tuples]
+            mail_data_list = [
+                await self._gmail_client.get_mail(eid, mailbox)
+                for mailbox, eid in eid_tuples
+            ]
             mail_data_list.sort(key=lambda x: x["time"], reverse=True)  # newest first
 
             for mail_data in mail_data_list:
@@ -261,7 +299,9 @@ class NvidiaWebPortal:
                 # matched, delete the verification email and return
                 _logger.info(f"Verification email received.")
                 _logger.debug(matches[0])
-                await self._gmail_client.delete_mail(mail_data["eid"], mailbox=mail_data["mailbox"])
+                await self._gmail_client.delete_mail(
+                    mail_data["eid"], mailbox=mail_data["mailbox"]
+                )
                 return matches[0]
 
         _logger.error("Timeout waiting for verification email.")
@@ -291,8 +331,10 @@ class NvidiaWebPortal:
         jar = session.cookie_jar
         for cookie in playwright_cookies:
             if "domain" in cookie:
-                jar.update_cookies({cookie["name"]: cookie["value"]},
-                                   response_url=URL(f"http://{cookie['domain']}"), )
+                jar.update_cookies(
+                    {cookie["name"]: cookie["value"]},
+                    response_url=URL(f"http://{cookie['domain']}"),
+                )
             else:
                 jar.update_cookies({cookie["name"]: cookie["value"]})
 
@@ -301,15 +343,19 @@ class NvidiaWebPortal:
 
 async def main():
     config = utils.read_config()
-    gmail_client = GmailClient(config["imap"]["host"],
-                               config["imap"]["port"],
-                               config["imap"]["username"],
-                               config["imap"]["password"], )
+    gmail_client = GmailClient(
+        config["imap"]["host"],
+        config["imap"]["port"],
+        config["imap"]["username"],
+        config["imap"]["password"],
+    )
 
-    portal = NvidiaWebPortal(username=config["portal"]["nvidia_username"],
-                             password=config["portal"]["nvidia_password"],
-                             https_proxy=config["global"]["https_proxy"],
-                             gmail_client=gmail_client, )
+    portal = NvidiaWebPortal(
+        username=config["portal"]["nvidia_username"],
+        password=config["portal"]["nvidia_password"],
+        https_proxy=config["global"]["https_proxy"],
+        gmail_client=gmail_client,
+    )
 
     connect_task = asyncio.create_task(gmail_client.connect())
     await portal.login(debug=False)
@@ -328,8 +374,12 @@ async def main():
             return download
 
     semaphore = asyncio.Semaphore(32)
-    downloads = await asyncio.gather(*(download_info_worker(taskid, meta, semaphore) for
-                                       taskid, meta in enumerate(metas)))
+    downloads = await asyncio.gather(
+        *(
+            download_info_worker(taskid, meta, semaphore)
+            for taskid, meta in enumerate(metas)
+        )
+    )
     with open(utils.proj_path("config/downloads.json"), "w") as f:
         f.write(json.dumps(downloads, indent=4, default=str))
 
