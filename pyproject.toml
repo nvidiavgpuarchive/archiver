@@ -19,5 +19,4 @@ dependencies = [
     "rich==14.0.0",
     "tenacity==9.1.2",
     "typing-extensions==4.14.0",
-    "utils>=1.0.2",
 ]

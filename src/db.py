@@ -9,12 +9,16 @@ from enum import Enum
 from pony.orm import *
 
 import utils
+from logger import get_logger
+
+_logger = get_logger(__name__)
 
 
 class VerificationState(str, Enum):
-    NOT_VERIFIED = "NOT_VERIFIED"
-    COMPLETE = "COMPLETE"
-    INCOMPLETE = "INCOMPLETE"
+    PENDING = "PENDING"  # not yet or upload in progress
+    NOT_VERIFIED = "NOT_VERIFIED"  # upload complete, integrity yet to verify
+    COMPLETE = "COMPLETE"  # uploaded and verified to be integral
+    INCOMPLETE = "INCOMPLETE"  # uploaded, verified to be broken
 
 
 # Database setup
@@ -44,6 +48,19 @@ class DriverMeta(db.Entity):
     @staticmethod
     def from_meta_info(meta_info: dict):
         release_date_obj = date.fromisoformat(meta_info["releaseDate"])
+        for name in [
+            "releaseDate",
+            "downloadType",
+            "linkType",
+            "platformName",
+            "platformVersion",
+            "productName",
+            "category",
+            "checksumFormat",
+            "productFamilies",
+        ]:
+            if name not in meta_info:
+                meta_info[name] = ""
         return DriverMeta(
             downloadId=meta_info["downloadId"],
             description=meta_info["description"],
@@ -160,17 +177,84 @@ db.generate_mapping(create_tables=True)
 @db_session
 def sync_meta_to_db(meta_list: list[dict]):
     existing_ids = select(m.downloadId for m in DriverMeta)[:]
-
+    updated_cnt = 0
     for meta in meta_list:
         if meta["downloadId"] not in existing_ids:
             DriverMeta.from_meta_info(meta)
+            updated_cnt += 1
+    _logger.info(f"Synced {updated_cnt} meta entries to database.")
+
+    mismatch_cnt = 0
+    for id in existing_ids:
+        if id not in {meta["downloadId"] for meta in meta_list}:
+            mismatch_cnt += 1
+    if mismatch_cnt:
+        _logger.warning(
+            f"{mismatch_cnt} number of items found in db but not in nvidia portal"
+        )
+
+
+@db_session
+def mark_all_pending_incomplete():
+    pending_ars = select(
+        ar for ar in ArchiveEntry if ar.verificationState == VerificationState.PENDING
+    )[:]
+    for ar in pending_ars:
+        ar.verificationState = VerificationState.INCOMPLETE
+    if len(pending_ars):
+        _logger.info(f"Marked {len(pending_ars)} entries as incomplete.")
+
+
+@db_session
+def get_states_count():
+    return {
+        s: count(a for a in ArchiveEntry if a.verificationState == s)
+        for s in VerificationState
+    }
+
+
+@db_session
+def get_meta_count():
+    return DriverMeta.select().count()
+
+
+async def __debug_remove_404_entires():
+    """
+    Removes entries and associated files from db if head bucket returns 404
+    :return:
+    """
+    with db_session:
+        ar = select(
+            a
+            for a in ArchiveEntry
+            if a.verificationState == VerificationState.INCOMPLETE
+        )[:]
+
+        from ia import IAClient
+
+        config = utils.read_config()
+        async with IAClient(
+            access_key=config["ia"]["s3_access_key"],
+            secret_key=config["ia"]["s3_secret_key"],
+        ) as client:
+            for a in ar:
+                bucket = a.identifier
+                if not await client.head_bucket(bucket):
+                    for file in a.files:
+                        file.delete()
+                    a.delete()
+                    print(f"{bucket} deleted from db.")
+                else:
+                    print(f"Won't delete {bucket}")
+
+
+async def main():
+    d = get_states_count()
+    print(d)
 
 
 # Example usage
 if __name__ == "__main__":
-    with db_session:
-        ar = select(
-            a for a in ArchiveEntry if a.verificationState == VerificationState.COMPLETE
-        )[:][0]
-        meta = ar.meta
-        print(meta.to_json())
+    import asyncio
+
+    asyncio.run(main())

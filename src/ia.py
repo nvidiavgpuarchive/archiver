@@ -93,7 +93,9 @@ class IAClient:
                     return await resp.json()
                 utils.log_error_and_raise(
                     _logger,
-                    f"Get metadata of '{bucket}' failed with status " f"{resp.status}",
+                    f"Get metadata of '{bucket}' failed with status "
+                    f""
+                    f"{resp.status}",
                 )
                 return None
 
@@ -105,8 +107,7 @@ class IAClient:
         meta_title: str,
         meta_description: str,
         meta_collection: str,  # test_collection if to be deleted in 30 days
-        custom_metadata: dict = {},
-        # metadata otherthan those required as params
+        custom_metadata: dict = {},  # metadata otherthan those required as params
         # custom metadata cannot contain _, use - instead
         option_keep_old_version=False,
         option_delete_derived_files=True,
@@ -449,8 +450,12 @@ class IAClient:
                     proxy=self._proxy,
                 ) as resp:
                     if resp.status >= 400:
-                        raise Exception(f"Bad status code {resp.status}")
-                    _logger.info(f"Successfully uploaded '{filepath}'.")
+                        text = await resp.text()
+                        raise Exception(
+                            f"Bad status code {resp.status}, resp {text}, "
+                            f"when uploading {filepath}"
+                        )
+                    _logger.info(f"Successfully uploaded {filepath}.")
         return
 
     async def download_file(
@@ -609,21 +614,21 @@ async def main():
         access_key=config["ia"]["s3_access_key"],
         secret_key=config["ia"]["s3_secret_key"],
     ) as client:
-        bucket = "nvgpu_NVIDIA-GRID-Linux-KVM-535.161.05-535.161.07-538.33.zip"
+        bucket = "nvgpu_NVIDIA-GRID-vSphere-6.7-418.181-418.181.07-427.11.zip"
         res = await client.get_info(bucket)
         pprint(res)
         return  # # Use random bucket name to avoid conflicts for every test run  # bucket =  #
         # "testbucket-" + "".join(random.choices(string.ascii_lowercase, k=10))  #  # limits =  #
         # await client.check_limits(bucket)  # pprint(limits)  # print(f"Using bucket: {bucket}")
         #  # print("Starting multipart upload...")  # await client.create_bucket(bucket=bucket,
-        #                            filepaths=[dummy_path],  #  #  #
-        #                            meta_mediatype="data",  #  #  #
-        #                            meta_title="Testzip expire after 30 days",  #  #  #
+        #                            filepaths=[dummy_path],  #  #  #  #  #  #  #  #  #
+        #                            meta_mediatype="data",  #  #  #  #  #  #  #  #  #
+        #                            meta_title="Testzip expire after 30 days",  #  #  #  #  #  #
         #                            meta_description="I'm trying the mulitpart uploading feature
         #                            "  #                                             "so large
-        #                            files won't "  #  #                            "break  #
-        #                            easily.",  #  #  #
-        #                            meta_collection="test_collection",  #  #  #
+        #                            files won't "  #  #                            "break  #  #
+        #                            easily.",  #  #  #  #  #  #  #  #  #
+        #                            meta_collection="test_collection",  #  #  #  #  #  #  #  #
         #                            multipart=True, )  #  # print("Upload complete. Verifying  #
         #                            upload...")  #  # info = await client.get_info(bucket)  #  #
         #                            print("Bucket info:")  # print(info)

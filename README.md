@@ -1,5 +1,7 @@
 ## Overview
 
+![Demo](demo.gif)
+
 This project is a Python 3.12 utility for downloading, verifying, and managing drivers and related files from various
 sources, and optionally uploading them to a remote archive. It includes functionality for chunked asynchronous
 downloads, metadata handling, archiving through various storage backends, and optional email integration for

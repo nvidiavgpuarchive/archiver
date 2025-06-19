@@ -8,15 +8,16 @@ import logging
 import os
 import random
 import re
+import shutil
 import socket
-import string
 import sys
 import tempfile
 import threading
+import time
 import types
 import zipfile
 from contextlib import closing
-from typing import Coroutine, Dict, List, Tuple
+from typing import Coroutine, Dict, List, Tuple, Iterator
 
 import aiofiles
 import aiohttp
@@ -165,6 +166,8 @@ def zip_listfiles(zippath: str) -> list[str]:
 # python libs fails miserably when encourtering
 # some compression formats
 async def zip_verify_crc(zippath: str) -> bool:
+    if shutil.which("7z") is None:
+        raise Exception("7z not found, please install it")
     try:
         process = await asyncio.create_subprocess_exec(
             "7z",
@@ -355,6 +358,13 @@ def remove_files(filepaths: list[str]) -> list[str]:
     return rmed
 
 
+def rm_dir(dirpath: str) -> None:
+    try:
+        shutil.rmtree(dirpath)
+    except:
+        return
+
+
 def where_am_i():
     frame = inspect.currentframe().f_back
     filename = frame.f_code.co_filename
@@ -363,11 +373,25 @@ def where_am_i():
 
 
 async def generate_placeholder():
-    random_data = "".join(random.choices(string.digits, k=32))
+    """
+    The code logic requires a placeholder to be uploaded in order to
+    create the bucket and init the whole upload procedure.
+    However, a blank file or if too simple would trigger IA's spam filter
+    and make bucket creation unsuccessful.
+    This function solves that, by randomize AiW and fill the placeholder.
+    """
+    async with aiofiles.open(proj_path("data/aiw.txt"), mode="r") as f:
+        aiw_text = await f.read()
+    aiw_paragraphs = aiw_text.split("\n\n")
+    random.shuffle(aiw_paragraphs)
+    aiw_paragraphs = random.choices(
+        aiw_paragraphs, k=int(len(aiw_paragraphs) * random.uniform(0.6, 0.9))
+    )
+    random_text = "\n\n".join(aiw_paragraphs)
     tmp_fd, tmp_path = tempfile.mkstemp(prefix="placeholder_", suffix=".txt")
     os.close(tmp_fd)  # Close the os-level file descriptor
     async with aiofiles.open(tmp_path, mode="w") as f:
-        await f.write(random_data)
+        await f.write(random_text)
     return tmp_path
 
 
@@ -407,38 +431,34 @@ def run_async_in_thread(coro: Coroutine) -> threading.Thread:
     return t
 
 
+def simple_timer(interval: int) -> Iterator[bool]:
+    """
+    Returns true and reset timer if have elapsed >= interval from last time calling
+    Returns false and do nothing if not
+    Triggers instantly the first time
+
+    timer = simple_timer(30)
+    if next(timer):
+        do(something)
+    """
+
+    last_time = 0.0
+    while True:
+        current_time = time.time()
+        if current_time - last_time >= interval:
+            last_time = current_time
+            yield True
+        else:
+            yield False
+
+
 async def main():
-    where_am_i()
-    return
-    # Generate a dummy 5 GB file if it doesn't exist
-    dummy_path = proj_path("dummy_5gb.bin")
-    size_bytes = 5 * 1024**3  # 5 GB
-
-    if not os.path.exists(dummy_path) or os.path.getsize(dummy_path) != size_bytes:
-        print("Creating 5GB dummy file...")
-        with open(dummy_path, "wb") as f:
-            # Writing zeros, but you can change the data as needed
-            f.seek(size_bytes - 1)
-            f.write(b"\0")
-        print("Dummy file created.")
-
-    import time
-
-    hashfuncs = [
-        hashlib.md5,
-        hashlib.sha1,
-        hashlib.sha256,
-        hashlib.sha512,
-        hashlib.blake2b,
-    ]
-
-    print("Hashing 5GB file asynchronously...")
-    t_start = time.time()
-    # r = await async_multihash(dummy_path, hashfuncs)
-    r = sync_multihash(dummy_path, hashfuncs)
-    t_end = time.time()
-    print("Hashes:", r)
-    print(f"Async hash took {t_end - t_start:.2f} seconds")
+    timer = simple_timer(3)
+    while True:
+        if next(timer):
+            print("Hello")
+        print("Bellow")
+        await asyncio.sleep(1)
 
 
 if __name__ == "__main__":

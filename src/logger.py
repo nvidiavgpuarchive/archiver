@@ -6,6 +6,29 @@ from rich.logging import RichHandler  # Raises ImportError if not installed
 import utils
 
 
+class CenteredFormatter(logging.Formatter):
+    # Class variable to track the longest name length
+    longest_name_length = 14  # Initial default width
+
+    def __init__(self, fmt=None, datefmt=None, style="%", initial_width=14):
+        super().__init__(fmt, datefmt, style)
+        # Set initial width if defined
+        CenteredFormatter.longest_name_length = initial_width
+
+    def format(self, record):
+        # Update the class variable if a longer name is found
+        CenteredFormatter.longest_name_length = max(
+            CenteredFormatter.longest_name_length, len(record.name)
+        )
+
+        # Calculate the dynamic width based on the longest name + brackets
+        dynamic_width = CenteredFormatter.longest_name_length + 2
+
+        # Center the name within the dynamic width (subtract 2 for the brackets)
+        record.name = f"{record.name.center(dynamic_width - 2)}"
+        return super().format(record)
+
+
 def get_logger(name=None) -> logging.Logger:
     """
     Creates and returns a logger configured with RichHandler for rich output.
@@ -18,8 +41,8 @@ def get_logger(name=None) -> logging.Logger:
 
     if not logger.handlers:
         # Create formatter that includes logger name
-        format_pattern = "[%(name)s] \t %(message)s"
-        formatter = logging.Formatter(format_pattern)
+        format_pattern = "[%(name)s]  %(message)s"
+        formatter = CenteredFormatter(format_pattern)
 
         console_handler = RichHandler(
             show_time=True,

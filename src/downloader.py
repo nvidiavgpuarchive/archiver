@@ -4,7 +4,7 @@ import os
 import pathlib
 import re
 import urllib.parse
-from typing import List, Tuple
+from typing import List
 
 import aiofiles
 import aiohttp
@@ -71,8 +71,8 @@ class AsyncChunkDownloader:
             not self._support_range or self._total_bytes <= (1024**2) * 128
         ):  # basic downloading, no point to use chunks for file <= 128MB
             _logger.debug(
-                f"File {
-                    self._filename} does not support multipart downloading or is too small."
+                f"File {self._filename} does not support multipart downloading or is "
+                f"too small."
             )
             _logger.info(
                 f"Downloading '{self._filename}' with one chunk, total size "
@@ -84,10 +84,8 @@ class AsyncChunkDownloader:
         else:  # chunked downloading
             chunks = utils.divide_into_chunks(self._total_bytes, self._num_chunks)
             _logger.info(
-                f"Downloading '{self._filename}' with {
-                    self._num_chunks} chunks,"
-                f" total size {
-                    utils.human_readable_size_str(self._total_bytes)} "
+                f"Downloading '{self._filename}' with {self._num_chunks} chunks,"
+                f" total size {utils.human_readable_size_str(self._total_bytes)} "
             )
 
             download_tasks = [
@@ -106,15 +104,14 @@ class AsyncChunkDownloader:
             if chunk_total_size != self._total_bytes:
                 await asyncio.to_thread(utils.remove_files, chunk_filelist)
                 _logger.error(
-                    f"Final size verification error. Expect {
-                        self._total_bytes} bytes, "
+                    f"Final size verification error. Expect {self._total_bytes} bytes, "
                     f"got {chunk_total_size} bytes"
                 )
                 raise Exception("Size mismatch.")
 
             final_path = await asyncio.to_thread(self._merge_chunks, chunk_filelist)
             self._state = "done"
-            _logger.info(f"Done with '{final_path}'")
+            _logger.info(f"Done with {final_path}")
 
             return final_path
 
@@ -166,16 +163,15 @@ class AsyncChunkDownloader:
                         if resp.status >= 400:
                             utils.log_error_and_raise(
                                 _logger,
-                                f"Failed to fetch file metadata for {
-                                    self._url}: {resp.status}",
+                                f"Failed to fetch file metadata for "
+                                f"{self._url}: {resp.status}",
                             )
 
                         content_length = resp.headers.get("content-length")
                         if content_length is None:
                             utils.log_error_and_raise(
                                 _logger,
-                                f"Failed to fetch content length for {
-                                    self._url}",
+                                f"Failed to fetch content length for " f"{self._url}",
                             )
                         self._total_bytes = int(content_length)
 
@@ -203,8 +199,8 @@ class AsyncChunkDownloader:
         else:
             utils.log_error_and_raise(
                 _logger,
-                f"Unable to fetch metadata for url {
-                    self._url}, last exceptino was : str{last_exception}",
+                f"Unable to fetch metadata for url {self._url}, last excep"
+                f"tino was : str{last_exception}",
             )
 
         # self._support_range = True
@@ -233,8 +229,9 @@ class AsyncChunkDownloader:
                 if bytes_downloaded != self._total_bytes:
                     utils.log_error_and_raise(
                         _logger,
-                        f"Basic download size verification error, expect {self._total_bytes}, got {
-                            bytes_downloaded}.",
+                        f"Basic download size verification error, "
+                        f"expect {self._total_bytes}, "
+                        f"got {bytes_downloaded}.",
                     )
                 return final_filepath
             except Exception as e:
@@ -249,12 +246,16 @@ class AsyncChunkDownloader:
         self, start: int, end: int, part_index: int, attempts=5
     ) -> str | None:
         """
-        Advanced, download one chunk only. If any error occurs, simply resume from the last success byte downloaded.
-        Fail after 3 consecutive times of no bytes received. (Meaning retry - no bytes received - retry)
+        Advanced, download one chunk only. If any error occurs, simply resume from the last
+        success byte downloaded.
+        Fail after 3 consecutive times of no bytes received. (Meaning retry - no bytes received -
+        retry)
 
-        In http header, start and end is inclusive, and start from 0. Meaning if we want to download the first byte,
+        In http header, start and end is inclusive, and start from 0. Meaning if we want to
+        download the first byte,
         we do bytes = 0-0
-        For this method, by python convention we start from 0 inclusive and end non inclusive. So to download first byte
+        For this method, by python convention we start from 0 inclusive and end non inclusive. So
+        to download first byte
         we do start = 0, end = 1
         """
 
@@ -281,8 +282,8 @@ class AsyncChunkDownloader:
                     ) as resp:
                         if resp.status not in (200, 206):
                             raise Exception(
-                                f"Chunk download failed with status {
-                                    resp.status}, headers: {headers}"
+                                f"Chunk download failed with status {resp.status}, "
+                                f"headers: {headers}"
                             )
 
                         async with aiofiles.open(chunk_filepath, "ab") as f:
@@ -298,8 +299,7 @@ class AsyncChunkDownloader:
 
             except (aiohttp.ClientConnectionError, ConnectionResetError) as e:
                 _logger.debug(
-                    f"Chunk {part_index} connection error: {
-                        str(e)}, retrying..."
+                    f"Chunk {part_index} connection error: {str(e)}, retrying..."
                 )
                 last_exception = e
 
@@ -322,8 +322,8 @@ class AsyncChunkDownloader:
                 os.remove(chunk_filepath)  # clean up if failed
             utils.log_error_and_raise(
                 _logger,
-                f"After {attempts} attempts failed to download part {
-                    part_index} from {self._url}, "
+                f"After {attempts} attempts failed to download part "
+                f"{part_index} from {self._url}, "
                 f"last exception: {last_exception}",
             )
             return None
@@ -332,8 +332,9 @@ class AsyncChunkDownloader:
         if chunk_bytes_downloaded != end - start:
             utils.log_error_and_raise(
                 _logger,
-                f"Chunk download failed, expect {
-                    end - start} bytes, got {chunk_bytes_downloaded} bytes",
+                f"Chunk download failed, expect {end - start} bytes, "
+                f"got {chunk_bytes_downloaded}"
+                f" bytes",
             )
 
         _logger.debug(

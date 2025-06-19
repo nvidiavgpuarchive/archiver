@@ -90,7 +90,7 @@ class NvidiaWebPortal:
             else:
                 utils.log_error_and_raise(
                     _logger,
-                    f"List downloads request failed with status " f"{resp.status}",
+                    f"List downloads request failed with status " f"" f"{resp.status}",
                 )
                 return None
 
@@ -110,9 +110,10 @@ class NvidiaWebPortal:
             else:
                 utils.log_error_and_raise(
                     _logger,
-                    f"Get download url request failed with status " f"{resp.status}",
+                    f"Get download url request failed with status "
+                    f""
+                    f"{resp.status}",
                 )
-                return None
 
     async def is_loggedin(self) -> bool:
         try:
