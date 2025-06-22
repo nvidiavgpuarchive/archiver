@@ -39,7 +39,6 @@ class SignalHandler:
             # Second Ctrl+C: Emergency shutdown with crash log
             self._logger.warning("Force terminating...")
             try:
-                utils.run_async_blocking(self._ui_worker.stop)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 crash_file = os.path.join(
                     tempfile.gettempdir(), f"vgpucrash_{timestamp}.log"

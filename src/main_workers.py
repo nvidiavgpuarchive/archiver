@@ -9,15 +9,15 @@ import traceback
 from enum import Enum
 from typing import Optional, TypedDict
 
-from pony.orm import db_session, select
+from pony.orm import commit, db_session, select
 
 import db
 import utils
-from db import ArchiveEntry, DriverMeta, VerificationState, FileChecksum
+from db import ArchiveEntry, DriverMeta, FileChecksum, VerificationState
 from downloader import AsyncChunkDownloader
 from ia import IAClient
 from logger import get_logger
-from portal import MetaInfo, DownloadInfo
+from portal import DownloadInfo, MetaInfo
 
 
 class WorkerState(Enum):
@@ -43,7 +43,7 @@ class Worker:
         self._task: Optional[asyncio.Task] = None
         self._shutdown: Optional[asyncio.Event] = None
 
-    ## Lifetime Control
+    # Lifetime Control
     ##
 
     def is_idle(self) -> bool:
@@ -104,7 +104,7 @@ class Worker:
             self._state = WorkerState.DEAD
             self._logger.info("Stopped.")
 
-    ## Actual Business Logic
+    # Actual Business Logic
     ##
 
     async def _handle_item(
@@ -204,9 +204,15 @@ class Worker:
         # CRC verification for zip files
         if main_filepath.endswith(".zip"):
             if not await utils.zip_verify_crc(main_filepath):
-                self._logger.warning(f"CRC checksum failed, {main_filepath} corrupted.")
+                self._logger.warning(
+                    f"CRC checksum failed, {
+                                     main_filepath} corrupted."
+                )
                 return False
-            self._logger.info(f"CRC checksum passed. '{main_filename}' is good.")
+            self._logger.info(
+                f"CRC checksum passed. '{
+                              main_filename}' is good."
+            )
 
         return True
 
@@ -270,6 +276,16 @@ class Worker:
                 https_proxy=https_proxy if self._config["ia"]["use_proxy"] else None,
                 multipart_chunksize=1024**2 * 256,  # 256MB
             ) as ia:
+                # verify, if all files already exist on ia then just skip
+                if await ia.verify_bucket(
+                    bucket=identifier, md5_dict=main_checksum_d, timeout=1
+                ):
+                    self._logger.info(
+                        f"Bucket '{
+                            identifier}' already exists on IA, skipping upload"
+                    )
+                    return True
+
                 # Upload using pre-allocated identifier
                 await ia.create_bucket(
                     bucket=identifier,
@@ -288,7 +304,7 @@ class Worker:
                 f"Upload to IA possibly unsuccessful: {e}, proceed anyway."
             )
 
-        self._logger.info(f"Upload '{task["download"]["url"]}' to IA finished.")
+        self._logger.info(f"Upload '{identifier}' to IA finished.")
         return True
 
     async def _cleanup_files(
@@ -300,7 +316,7 @@ class Worker:
         if working_dir:
             await asyncio.to_thread(utils.rm_dir, working_dir)
 
-    ## DB Tools
+    # DB Tools
     ##
 
     async def _create_pending_archive_entry(self, task: QueueItem) -> Optional[str]:
@@ -319,7 +335,8 @@ class Worker:
         random_suffix = "".join(
             random.choices(string.ascii_lowercase + string.digits, k=8)
         )
-        identifier = f"{self._config['ia']['bucket_prefix']}{filename}_{random_suffix}"
+        identifier = f"{self._config['ia']['bucket_prefix']}{
+            filename}_{random_suffix}"
 
         def _create_archive():
             with db_session():
@@ -334,15 +351,11 @@ class Worker:
                 existing_ar = ArchiveEntry.get(meta=meta.id)
                 if existing_ar:
                     existing_ar.verificationState = VerificationState.PENDING
-                    for file in existing_ar.files:
-                        file.delete()
-                    existing_ar.files = []
                     return existing_ar.identifier
                 else:
                     ArchiveEntry(
                         identifier=identifier,
                         meta=meta,
-                        files=[],
                         verificationState=VerificationState.PENDING,
                     )
                     return identifier
@@ -365,25 +378,27 @@ class Worker:
             with db_session():
                 # Get or create file checksum entry
                 main_dbentry = FileChecksum.get(md5=main_checksum_d["md5"])
-                if main_dbentry:
-                    main_dbentry.update_from_hash_dict(main_filepath, main_checksum_d)
-                else:
+                if not main_dbentry:
                     main_dbentry = FileChecksum.from_hash_dict(
                         main_filepath, main_checksum_d
                     )
+                this_filename = os.path.basename(main_filepath)
+                if this_filename not in main_dbentry.filenames:
+                    main_dbentry.filenames.append(this_filename)
 
                 # Update archive entry
                 archive_entry = ArchiveEntry.get(identifier=identifier)
                 if archive_entry:
-                    archive_entry.files = [main_dbentry]
+                    archive_entry.file = main_dbentry
                     archive_entry.verificationState = VerificationState.NOT_VERIFIED
                 else:
                     self._logger.error(
-                        f"Archive entry {identifier} not found during completion"
+                        f"Archive entry {
+                            identifier} not found during completion"
                     )
 
         await asyncio.to_thread(_db_update)
-        self._logger.info(f"ArchiveEntry {identifier} updated to not veriified in db.")
+        self._logger.info(f"ArchiveEntry '{identifier}' updated in db.")
 
     async def _mark_archive_incomplete(self, identifier: str):
         """Mark archive entry as incomplete on failure."""
@@ -395,9 +410,9 @@ class Worker:
                     archive_entry.verificationState = VerificationState.INCOMPLETE
 
         await asyncio.to_thread(_db_update)
-        self._logger.info(f"ArchiveEntry {identifier} marked as incomplete.")
+        self._logger.info(f"ArchiveEntry '{identifier}' marked as incomplete.")
 
-    ## Other Tools
+    # Other Tools
     ##
 
     def _extract_filename(self, url: str) -> Optional[str]:
@@ -430,7 +445,7 @@ class VerificationWorker:
         self._task: Optional[asyncio.Task] = None
         self._shutdown: Optional[asyncio.Event] = None
 
-    ## Lifetime Control
+    # Lifetime Control
     ##
 
     def is_idle(self) -> bool:
@@ -464,7 +479,9 @@ class VerificationWorker:
             unverified_cnt = states_count[VerificationState.NOT_VERIFIED]
             if next(logmsg_timer):
                 self._logger.info(
-                    f"Verification worker running, " f"{unverified_cnt} to verify."
+                    f"Verification worker running, "
+                    f"{
+                        unverified_cnt} to verify."
                 )
 
             if not unverified_cnt:
@@ -473,21 +490,32 @@ class VerificationWorker:
             self._state = WorkerState.RUNNING
 
             with db_session:
+                # mark all archives not associated with a file as incomplete
+                failed_archives = select(
+                    a
+                    for a in ArchiveEntry
+                    if a.verificationState
+                    in [VerificationState.COMPLETE, VerificationState.NOT_VERIFIED]
+                    and not a.file
+                )[:]
+                for a in failed_archives:
+                    a.verificationState = VerificationState.INCOMPLETE
+                    self._logger.warning(
+                        f"Archive '{
+                            a.identifier}' marked incomplete because no "
+                        f"file associated. This is NOT normal."
+                    )
+
+                commit()
+
+                # sample and verify
                 sample_cnt = min(unverified_cnt, self._batch_size)
                 toverify_archives = select(
                     a
                     for a in ArchiveEntry
                     if a.verificationState == VerificationState.NOT_VERIFIED
                 )[:sample_cnt]
-                toverify_checksums = [a.files for a in toverify_archives]
-                args = [
-                    {
-                        "bucket": toverify_archives[i].identifier,
-                        "md5_dict": {f.filename: f.md5 for f in toverify_checksums[i]},
-                        "timeout": 5,
-                    }
-                    for i in range(sample_cnt)
-                ]
+                toverify_checksums = [a.file for a in toverify_archives]
 
                 async with (
                     IAClient(  # for verification purpose access key is not needed
@@ -496,7 +524,18 @@ class VerificationWorker:
                 ):
                     # results are tuples of filelist, meta
                     results = await asyncio.gather(
-                        *(ia.verify_bucket(**args[i]) for i in range(sample_cnt)),
+                        *(
+                            ia.verify_bucket(
+                                bucket=toverify_archives[i].identifier,
+                                md5_dict={
+                                    toverify_checksums[i]
+                                    .filenames[0]: toverify_checksums[i]
+                                    .md5
+                                },
+                                timeout=5,
+                            )
+                            for i in range(sample_cnt)
+                        ),
                         return_exceptions=True,
                     )
 
@@ -515,7 +554,8 @@ class VerificationWorker:
                         )
                         toverify_archives[idx].ia_meta = ia_meta
                     self._logger.info(
-                        f"Bucket '{toverify_archives[idx].identifier}' verified to "
+                        f"Bucket '{
+                            toverify_archives[idx].identifier}' verified to "
                         f"be "
                         f"{not bool(result_fl)}"
                     )

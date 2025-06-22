@@ -544,7 +544,9 @@ class IAClient:
         Will use md5_dict if provided, otherwise will calculate md5 for each file in filepaths.
         """
         if not filepaths and not md5_dict:
-            utils.log_error_and_raise(_logger, "No filepaths or md5_dict provided.")
+            utils.log_error_and_raise(
+                _logger, f"No filepaths or md5_dict provided, bucket '{bucket}'"
+            )
 
         if md5_dict:
             md5_items = md5_dict.items()
@@ -618,20 +620,7 @@ async def main():
         res = await client.get_info(bucket)
         pprint(res)
         return  # # Use random bucket name to avoid conflicts for every test run  # bucket =  #
-        # "testbucket-" + "".join(random.choices(string.ascii_lowercase, k=10))  #  # limits =  #
-        # await client.check_limits(bucket)  # pprint(limits)  # print(f"Using bucket: {bucket}")
-        #  # print("Starting multipart upload...")  # await client.create_bucket(bucket=bucket,
-        #                            filepaths=[dummy_path],  #  #  #  #  #  #  #  #  #
-        #                            meta_mediatype="data",  #  #  #  #  #  #  #  #  #
-        #                            meta_title="Testzip expire after 30 days",  #  #  #  #  #  #
-        #                            meta_description="I'm trying the mulitpart uploading feature
-        #                            "  #                                             "so large
-        #                            files won't "  #  #                            "break  #  #
-        #                            easily.",  #  #  #  #  #  #  #  #  #
-        #                            meta_collection="test_collection",  #  #  #  #  #  #  #  #
-        #                            multipart=True, )  #  # print("Upload complete. Verifying  #
-        #                            upload...")  #  # info = await client.get_info(bucket)  #  #
-        #                            print("Bucket info:")  # print(info)
+        # "testbucket-" + "".join(random.choices(string.ascii_lowercase, k=10))  #  # limits =  #  # await client.check_limits(bucket)  # pprint(limits)  # print(f"Using bucket: {bucket}")  #  # print("Starting multipart upload...")  # await client.create_bucket(bucket=bucket,  #                            filepaths=[dummy_path],  #  #  #  #  #  #  #  #  #  #  #                            meta_mediatype="data",  #  #  #  #  #  #  #  #  #  #  #                            meta_title="Testzip expire after 30 days",  #  #  #  #  #  #  #                            meta_description="I'm trying the mulitpart uploading feature  #                            "  #                                             "so large  #                            files won't "  #  #                            "break  #  #  #                            easily.",  #  #  #  #  #  #  #  #  #  #  #                            meta_collection="test_collection",  #  #  #  #  #  #  #  #  #                            multipart=True, )  #  # print("Upload complete. Verifying  #  #                            upload...")  #  # info = await client.get_info(bucket)  #  #  #                            print("Bucket info:")  # print(info)
 
 
 if __name__ == "__main__":

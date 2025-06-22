@@ -99,7 +99,6 @@ class FileChecksum(db.Entity):
     id = PrimaryKey(int, auto=True)
     # TODO: doesn't have to be unique
     # also add logic for duplicatoin check in main
-    filename = Required(str, unique=True, index=True)
     size = Required(int, size=64)
     md5 = Required(str)
     sha1 = Required(str)
@@ -118,42 +117,15 @@ class FileChecksum(db.Entity):
     blake2s = Optional(str)
     crc32 = Optional(str)
 
-    # Relationships
-    archive = Optional("ArchiveEntry", reverse="files")
-
-    @staticmethod
-    def from_file(filepath: str):
-        hash_dict = utils.sync_multihash(
-            filepath,
-            hashfuncs=[
-                hashlib.md5,
-                hashlib.sha1,
-                hashlib.sha256,
-                hashlib.sha512,
-                hashlib.bake2b,
-            ],
-        )
-        return FileChecksum(
-            filename=os.path.basename(filepath),
-            size=os.path.getsize(filepath),
-            **hash_dict,
-        )
+    filenames = Required(Json)
+    archives = Set("ArchiveEntry", reverse="file")
 
     @staticmethod
     def from_hash_dict(filepath, hash_dict: dict):
         return FileChecksum(
-            filename=os.path.basename(filepath),
             size=os.path.getsize(filepath),
             **hash_dict,
         )
-
-    def update_from_hash_dict(self, filepath, hash_dict: dict):
-        self.filename = os.path.basename(filepath)
-        self.size = os.path.getsize(filepath)
-
-        for key, value in hash_dict.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
 
 
 class ArchiveEntry(db.Entity):
@@ -161,9 +133,10 @@ class ArchiveEntry(db.Entity):
 
     ia_meta = Optional(Json)  # JSON field in Pony ORM
 
-    # Relationship: Foreign Key to DriverMeta
+    # Relationship
+    # One file can have multiple archives
     meta = Required(DriverMeta, reverse="archive", unique=True)
-    files = Set(FileChecksum, reverse="archive")
+    file = Optional("FileChecksum", reverse="archives")
 
     verificationState = Required(str, default=VerificationState.NOT_VERIFIED)
 

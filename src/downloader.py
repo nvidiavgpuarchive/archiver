@@ -3,6 +3,7 @@ import asyncio
 import os
 import pathlib
 import re
+import ssl
 import urllib.parse
 from typing import List
 
@@ -171,7 +172,9 @@ class AsyncChunkDownloader:
                         if content_length is None:
                             utils.log_error_and_raise(
                                 _logger,
-                                f"Failed to fetch content length for " f"{self._url}",
+                                f"Failed to fetch content length for "
+                                f""
+                                f"{self._url}",
                             )
                         self._total_bytes = int(content_length)
 
@@ -297,7 +300,11 @@ class AsyncChunkDownloader:
                 # success → break
                 break
 
-            except (aiohttp.ClientConnectionError, ConnectionResetError) as e:
+            except (
+                aiohttp.ClientConnectionError,
+                ConnectionResetError,
+                ssl.SSLError,
+            ) as e:
                 _logger.debug(
                     f"Chunk {part_index} connection error: {str(e)}, retrying..."
                 )

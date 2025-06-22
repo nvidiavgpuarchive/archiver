@@ -142,9 +142,6 @@ class NvidiaWebPortal:
                         self._userinfo = info
                         self._virtual_groups = await v_resp.json()
                         return
-                    _logger.error(
-                        f"Get virtual groups failed with status code {v_resp.status}."
-                    )
                     utils.log_error_and_raise(
                         _logger,
                         f"Get virtual groups request failed with status "
