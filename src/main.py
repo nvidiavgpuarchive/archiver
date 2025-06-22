@@ -9,7 +9,8 @@ from pony.orm import select
 from db import ArchiveEntry, DriverMeta, sync_meta_to_db
 from gmail_client import GmailClient
 from main_tui import *
-from main_workers import Worker, VerificationWorker
+from main_verification import VerificationWorker
+from main_worker import Worker
 from portal import NvidiaWebPortal
 
 _logger = get_logger(__name__)

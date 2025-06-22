@@ -1,7 +1,6 @@
 # pony orm use rule of thumb:
 # 1. use shortliving sessions and don't interrupt them with async
 # 2. if a function is full of pony code, isolate it into a seperate thread
-import hashlib
 import os
 from datetime import date
 from enum import Enum
@@ -123,6 +122,7 @@ class FileChecksum(db.Entity):
     @staticmethod
     def from_hash_dict(filepath, hash_dict: dict):
         return FileChecksum(
+            filenames=[os.path.basename(filepath)],
             size=os.path.getsize(filepath),
             **hash_dict,
         )
@@ -143,7 +143,8 @@ class ArchiveEntry(db.Entity):
 
 # Initialize the database (SQLite example)
 # Initialize the database (SQLite example)
-db.bind(provider="sqlite", filename=utils.proj_path("config/db.sqlite"), create_db=True)
+db.bind(provider="sqlite", filename=utils.proj_path(
+    "config/db.sqlite"), create_db=True)
 db.generate_mapping(create_tables=True)
 
 

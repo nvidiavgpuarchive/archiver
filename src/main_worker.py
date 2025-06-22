@@ -9,9 +9,8 @@ import traceback
 from enum import Enum
 from typing import Optional, TypedDict
 
-from pony.orm import commit, db_session, select
+from pony.orm import db_session
 
-import db
 import utils
 from db import ArchiveEntry, DriverMeta, FileChecksum, VerificationState
 from downloader import AsyncChunkDownloader
@@ -49,7 +48,7 @@ class Worker:
     def is_idle(self) -> bool:
         return self._state == WorkerState.IDLE
 
-    async def start(self) -> asyncio.Task:
+    async def start(self) -> "Worker":
         self._task = asyncio.create_task(self._run())
         self._shutdown = asyncio.Event()  # worker manages its own shutdown event
         return self
@@ -94,7 +93,7 @@ class Worker:
                         item, identifier, working_dir
                     )
                 except Exception as e:
-                    self._logger.error(f"Task processing failed: {e}")
+                    self._logger.warning(f"Task processing failed: {e}")
                     await self._mark_archive_incomplete(identifier)
                 finally:
                     await self._cleanup_files(filepath_list, working_dir)
@@ -119,7 +118,7 @@ class Worker:
         if not filepath_list:
             raise Exception("Download failed.")
 
-        if self._shutdown.is_set():  # incase shutdown come
+        if self._shutdown.is_set():  # incase shutdown comes
             raise Exception("Shutdown received.")
 
         # Verify files
@@ -133,18 +132,16 @@ class Worker:
         main_checksum_d = hash_dict[main_filename]
 
         # Upload to IA
-        if not await self._upload_to_ia(
-            item, filepath_list, identifier, main_checksum_d
-        ):
+        if not await self._upload_to_ia(item, filepath_list, identifier, hash_dict):
             raise Exception("Upload to IA failed.")
 
-        # Update database with file checksums
+        # Update a database with file checksums
         await self._update_db_on_complete(identifier, main_filepath, main_checksum_d)
 
         return filepath_list
 
     async def _download_files(self, item: QueueItem, working_dir: str) -> list[str]:
-        """Download files and return list of file paths."""
+        """Download files and return a list of file paths."""
         if not await utils.is_link_alive(item["download"]["url"]):
             self._logger.info(
                 f"Download link {item["download"]["url"]} expired, skipping."
@@ -156,7 +153,7 @@ class Worker:
         filepath_list = []
 
         try:
-            # Download main file
+            # Download the main file
             async with AsyncChunkDownloader(
                 item["download"]["url"],
                 working_dir,
@@ -170,7 +167,7 @@ class Worker:
                     return []
                 filepath_list.append(main_filepath)
 
-            # Download checksum file if available
+            # Download a checksum file if available
             if item["download"]["checksumUrl"]:
                 async with AsyncChunkDownloader(
                     item["download"]["checksumUrl"], working_dir, proxy=https_proxy
@@ -245,7 +242,7 @@ class Worker:
         task: QueueItem,
         filepath_list: list[str],
         identifier: str,
-        main_checksum_d: dict[str, str],
+        hash_dict: dict[str, dict[str, str]],
     ) -> bool:
         """Upload files to Internet Archive using the pre-allocated identifier."""
         self._logger.info(f"Start uploading '{identifier}' to IA.")
@@ -253,6 +250,7 @@ class Worker:
         https_proxy = self._config["global"]["https_proxy"]
         main_filepath = filepath_list[0]
         main_filename = os.path.basename(main_filepath)
+        main_checksum_d = hash_dict[main_filename]
 
         # Prepare metadata
         ia_description = self._config["ia"]["common_description"]
@@ -276,10 +274,14 @@ class Worker:
                 https_proxy=https_proxy if self._config["ia"]["use_proxy"] else None,
                 multipart_chunksize=1024**2 * 256,  # 256MB
             ) as ia:
-                # verify, if all files already exist on ia then just skip
-                if await ia.verify_bucket(
-                    bucket=identifier, md5_dict=main_checksum_d, timeout=1
-                ):
+                # verify, if all files already exist on ia then skip
+                badlist, _ = await ia.verify_bucket(
+                    bucket=identifier,
+                    md5_dict={k: v["md5"] for k, v in hash_dict.items()},
+                    timeout=1,
+                )
+
+                if not badlist:
                     self._logger.info(
                         f"Bucket '{
                             identifier}' already exists on IA, skipping upload"
@@ -328,7 +330,7 @@ class Worker:
         filename = self._extract_filename(task["download"]["url"])
         if not filename:
             raise Exception(
-                f"Can't extract filenamef from url {task["download"]["url"]}"
+                f"Can't extract filename from url {task["download"]["url"]}"
             )
 
         # Generate unique identifier
@@ -377,19 +379,19 @@ class Worker:
         def _db_update():
             with db_session():
                 # Get or create file checksum entry
-                main_dbentry = FileChecksum.get(md5=main_checksum_d["md5"])
-                if not main_dbentry:
-                    main_dbentry = FileChecksum.from_hash_dict(
+                file_entry = FileChecksum.get(md5=main_checksum_d["md5"])
+                if not file_entry:
+                    file_entry = FileChecksum.from_hash_dict(
                         main_filepath, main_checksum_d
                     )
                 this_filename = os.path.basename(main_filepath)
-                if this_filename not in main_dbentry.filenames:
-                    main_dbentry.filenames.append(this_filename)
+                if this_filename not in file_entry.filenames:
+                    file_entry.filenames.append(this_filename)
 
                 # Update archive entry
                 archive_entry = ArchiveEntry.get(identifier=identifier)
                 if archive_entry:
-                    archive_entry.file = main_dbentry
+                    archive_entry.file = file_entry
                     archive_entry.verificationState = VerificationState.NOT_VERIFIED
                 else:
                     self._logger.error(
@@ -431,133 +433,3 @@ class Worker:
         )
         os.mkdir(working_dir)
         return working_dir
-
-
-class VerificationWorker:
-
-    def __init__(self, delay=10, batch_size=8):
-        self._delay = delay
-        self._batch_size = batch_size
-
-        self._config = utils.read_config()
-        self._logger = get_logger(f"verification")
-        self._state = WorkerState.IDLE
-        self._task: Optional[asyncio.Task] = None
-        self._shutdown: Optional[asyncio.Event] = None
-
-    # Lifetime Control
-    ##
-
-    def is_idle(self) -> bool:
-        return self._state == WorkerState.IDLE
-
-    async def start(self) -> asyncio.Task:
-        self._task = asyncio.create_task(self._run())
-        self._shutdown = asyncio.Event()
-        self._logger.info("Verification worker started.")
-        return self
-
-    async def stop(self):
-        if self._task and not self._task.done():
-            self._shutdown.set()
-            await self._task
-
-    async def _run(self):
-        """
-        Randomly selects n unverified entire from state.json every delay seconds
-        and attempts to verify them.
-
-        Verificatoin worker have very long blocking db session, so this must not
-        run in the same async loop as the main program.
-        """
-
-        logmsg_timer = utils.simple_timer(30)
-        while not self._shutdown.is_set():
-            await asyncio.sleep(self._delay)
-
-            states_count = await asyncio.to_thread(db.get_states_count)
-            unverified_cnt = states_count[VerificationState.NOT_VERIFIED]
-            if next(logmsg_timer):
-                self._logger.info(
-                    f"Verification worker running, "
-                    f"{
-                        unverified_cnt} to verify."
-                )
-
-            if not unverified_cnt:
-                self._state = WorkerState.IDLE
-                continue
-            self._state = WorkerState.RUNNING
-
-            with db_session:
-                # mark all archives not associated with a file as incomplete
-                failed_archives = select(
-                    a
-                    for a in ArchiveEntry
-                    if a.verificationState
-                    in [VerificationState.COMPLETE, VerificationState.NOT_VERIFIED]
-                    and not a.file
-                )[:]
-                for a in failed_archives:
-                    a.verificationState = VerificationState.INCOMPLETE
-                    self._logger.warning(
-                        f"Archive '{
-                            a.identifier}' marked incomplete because no "
-                        f"file associated. This is NOT normal."
-                    )
-
-                commit()
-
-                # sample and verify
-                sample_cnt = min(unverified_cnt, self._batch_size)
-                toverify_archives = select(
-                    a
-                    for a in ArchiveEntry
-                    if a.verificationState == VerificationState.NOT_VERIFIED
-                )[:sample_cnt]
-                toverify_checksums = [a.file for a in toverify_archives]
-
-                async with (
-                    IAClient(  # for verification purpose access key is not needed
-                        "", "", self._config["global"]["https_proxy"]
-                    ) as ia
-                ):
-                    # results are tuples of filelist, meta
-                    results = await asyncio.gather(
-                        *(
-                            ia.verify_bucket(
-                                bucket=toverify_archives[i].identifier,
-                                md5_dict={
-                                    toverify_checksums[i]
-                                    .filenames[0]: toverify_checksums[i]
-                                    .md5
-                                },
-                                timeout=5,
-                            )
-                            for i in range(sample_cnt)
-                        ),
-                        return_exceptions=True,
-                    )
-
-                # result is a list of bucket names, or exception
-                for idx, result in enumerate(results):
-                    if isinstance(result, Exception):  # timeout, unverified
-                        continue
-                    result_fl, ia_meta = result
-                    if result_fl:  # incomplete
-                        toverify_archives[idx].verificationState = (
-                            VerificationState.INCOMPLETE
-                        )
-                    else:
-                        toverify_archives[idx].verificationState = (
-                            VerificationState.COMPLETE
-                        )
-                        toverify_archives[idx].ia_meta = ia_meta
-                    self._logger.info(
-                        f"Bucket '{
-                            toverify_archives[idx].identifier}' verified to "
-                        f"be "
-                        f"{not bool(result_fl)}"
-                    )
-
-        self._logger.info("Verification worker stopped.")

@@ -161,7 +161,7 @@ class IAClient:
         total_bytes = 0
         for filepath in filepaths:
             if not os.path.exists(filepath):
-                utils.log_error_and_raise(_logger, f"File '{filepath}' does not exist")
+                utils.log_error_and_raise(_logger, f"File {filepath} does not exist")
             total_bytes += os.path.getsize(filepath)
 
         headers = {
@@ -418,9 +418,7 @@ class IAClient:
                 part_num += 1
 
             await self._multipart_complete(bucket, filepath, upload_id, parts)
-            _logger.info(
-                f"Mulitpart upload '{filepath}' to bucket '{bucket}' finished.'"
-            )
+            _logger.info(f"Mulitpart upload {filepath} to bucket '{bucket}' finished.'")
         except Exception as e:
             try:
                 await self.multipart_abort(bucket, filename, upload_id)
@@ -537,6 +535,8 @@ class IAClient:
         timeout=180,
     ) -> tuple[list[str], dict]:
         """
+        Returns bad_filelist, metainfo
+
         Verify each file in filepaths is present and has same checksum in the bucket.
         Returns filepaths in the bucket that either not exist or differ from local files.
         Also return the metainfo from ia.
