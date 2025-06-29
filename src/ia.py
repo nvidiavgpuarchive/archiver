@@ -616,7 +616,7 @@ async def main():
         access_key=config["ia"]["s3_access_key"],
         secret_key=config["ia"]["s3_secret_key"],
     ) as client:
-        bucket = "nvgpu_NVIDIA-GRID-vSphere-6.7-418.181-418.181.07-427.11.zip"
+        bucket = "nvgpu_NVIDIA-GRID-Windows-418.197.02-427.33.zip"
         res = await client.get_info(bucket)
         pprint(res)
         return  # # Use random bucket name to avoid conflicts for every test run  # bucket =  #

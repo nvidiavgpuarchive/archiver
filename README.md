@@ -1,3 +1,8 @@
+<div align="center">
+  <img width="500px" alt="logo" src="logo_archiver.png"/></a>
+  <br/>
+</div>
+
 ## Overview
 
 ![Demo](demo.gif)
@@ -39,18 +44,11 @@ interactions with storage providers, and portal-like operations for organizing m
     uv sync
     ```
 
-   The main dependencies are:
-    - `click`
-    - `pytest`
-    - `pyyaml`
-    - `requests`
-
-
 3. **Configuration**  
    Rename the `config.example/` dir into `config/` and edit it to suit your need.
 
 
 4. **Running the Application**
     ```bash
-    uv run python main.py
+    uv run python main.py --help 
     ```

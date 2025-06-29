@@ -3,3 +3,8 @@ repos:
     rev: 24.4.2  # Use the latest stable version
     hooks:
       - id: black
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.15.0
+    hooks:
+      - id: gitleaks

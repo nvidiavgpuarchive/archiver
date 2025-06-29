@@ -1,14 +1,17 @@
 # pony orm use rule of thumb:
 # 1. use shortliving sessions and don't interrupt them with async
 # 2. if a function is full of pony code, isolate it into a seperate thread
+import json
 import os
 from datetime import date
 from enum import Enum
+from typing import Union
 
 from pony.orm import *
 
 import utils
 from logger import get_logger
+
 
 _logger = get_logger(__name__)
 
@@ -76,8 +79,8 @@ class DriverMeta(db.Entity):
             productFamilies=meta_info.get("productFamilies"),
         )
 
-    def to_json(self):
-        return {
+    def to_json(self, include_id=False):
+        j = {
             "downloadId": self.downloadId,
             "description": self.description,
             "name": self.name,
@@ -92,6 +95,7 @@ class DriverMeta(db.Entity):
             "checksumFormat": self.checksumFormat,
             "productFamilies": self.productFamilies,
         }
+        return j if not include_id else j | {"id": self.id}
 
 
 class FileChecksum(db.Entity):
@@ -127,6 +131,28 @@ class FileChecksum(db.Entity):
             **hash_dict,
         )
 
+    def to_json(self, include_id=False):
+        j = {
+            "size": self.size,
+            "md5": self.md5,
+            "sha1": self.sha1,
+            "sha256": self.sha256,
+            "sha512": self.sha512,
+            "blake2b": self.blake2b,
+            "shake_128": self.shake_128,
+            "shake_256": self.shake_256,
+            "sha224": self.sha224,
+            "sha384": self.sha384,
+            "sha3_224": self.sha3_224,
+            "sha3_256": self.sha3_256,
+            "sha3_384": self.sha3_384,
+            "sha3_512": self.sha3_512,
+            "blake2s": self.blake2s,
+            "crc32": self.crc32,
+            "filenames": self.filenames,
+        }
+        return j if not include_id else j | {"id": self.id}
+
 
 class ArchiveEntry(db.Entity):
     identifier = PrimaryKey(str)
@@ -140,11 +166,18 @@ class ArchiveEntry(db.Entity):
 
     verificationState = Required(str, default=VerificationState.NOT_VERIFIED)
 
+    def to_json(self, expand=False):
+        return {
+            "identifier": self.identifier,
+            "ia_meta": self.ia_meta,
+            "meta": self.meta if not expand else self.meta.to_json(),
+            "file": self.file if not expand else self.file.to_json(),
+        }
+
 
 # Initialize the database (SQLite example)
 # Initialize the database (SQLite example)
-db.bind(provider="sqlite", filename=utils.proj_path(
-    "config/db.sqlite"), create_db=True)
+db.bind(provider="sqlite", filename=utils.proj_path("config/db.sqlite"), create_db=True)
 db.generate_mapping(create_tables=True)
 
 
@@ -192,6 +225,14 @@ def get_meta_count():
     return DriverMeta.select().count()
 
 
+@db_session
+def dump_completed_to_json() -> dict[str, Union["JinjaEntry", dict]]:
+    ar_list = ArchiveEntry.select(verificationState=VerificationState.COMPLETE)[:]
+    ar_list_json = {ar.identifier: ar.to_json(expand=True) for ar in ar_list}
+    ar_list_json = utils.dict_remove_empty_values(ar_list_json)
+    return ar_list_json
+
+
 async def __debug_remove_404_entires():
     """
     Removes entries and associated files from db if head bucket returns 404
@@ -223,8 +264,9 @@ async def __debug_remove_404_entires():
 
 
 async def main():
-    d = get_states_count()
-    print(d)
+    j = dump_completed_to_json()
+    with open("/tmp/test.json", "w") as f:
+        json.dump(j, f, indent=4)
 
 
 # Example usage

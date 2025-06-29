@@ -121,9 +121,7 @@ def sanitize_filename(
 
     invalid_chars = r'[\\/*?:"<>|\r\n\t]'
     sanitized = re.sub(invalid_chars, replacement, filename)
-
-    # Remove leading/trailing whitespace, dots, etc.
-    sanitized = sanitized.strip().strip(".")
+    sanitized = sanitized.replace(" ", "_").strip(".")
 
     # Limit length (preserving extension, if any)
     if len(sanitized) > max_length:
@@ -331,6 +329,26 @@ def text_to_html_code_block(text: str) -> str:
     return f"<pre><code>{escaped_text}</code></pre>"
 
 
+def dict_remove_empty_values(data):
+    """
+    Recursively remove keys with empty string values from a nested JSON-like dictionary.
+
+    :param data: The dictionary to process
+    :return: A new dictionary with empty string values removed
+    """
+    if isinstance(data, dict):
+        return {
+            k: dict_remove_empty_values(v)
+            for k, v in data.items()
+            if v != ""
+            and (not isinstance(v, (dict, list)) or dict_remove_empty_values(v))
+        }
+    elif isinstance(data, list):
+        return [dict_remove_empty_values(item) for item in data if item != ""]
+    else:
+        return data
+
+
 def check_non_exist(filepaths: list[str]) -> list[str]:
     """
     Accepts a list of absolute filepaths, return a list of str
@@ -452,14 +470,29 @@ def simple_timer(interval: int) -> Iterator[bool]:
             yield False
 
 
-async def main():
-    timer = simple_timer(3)
-    while True:
-        if next(timer):
-            print("Hello")
-        print("Bellow")
-        await asyncio.sleep(1)
+class TouchAndOpen:
+    def __init__(self, filepath, mode="w", encoding="utf-8"):
+        self.filepath = filepath
+        self.mode = mode
+        self.encoding = encoding
+        self.file = None
+
+    def __enter__(self):
+        # Ensure all the directories in the filepath exist
+        os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
+        # Open the file and return the file object
+        self.file = open(self.filepath, self.mode, encoding=self.encoding)
+        return self.file
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Close the file when exiting
+        if self.file:
+            self.file.close()
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+def is_number(s: str) -> bool:
+    try:
+        float(s.strip())  # Try to convert the string to a float
+        return True
+    except ValueError:
+        return False

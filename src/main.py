@@ -1,3 +1,4 @@
+import argparse
 import os
 import signal
 import tempfile
@@ -5,6 +6,7 @@ import traceback
 from datetime import datetime
 
 from pony.orm import select
+from rich_argparse import RichHelpFormatter
 
 from db import ArchiveEntry, DriverMeta, sync_meta_to_db
 from gmail_client import GmailClient
@@ -205,7 +207,41 @@ async def main_loop(
         _logger.info(f"Task '{meta_json["description"]}' queued.")
 
 
-# u
+def parse_arguments():
+    """
+    Parse command-line arguments using rich argparse.
+    """
+    parser = argparse.ArgumentParser(
+        description="Download and upload NVIDIA drivers from enterprise portal.",
+        formatter_class=RichHelpFormatter,
+    )
+    parser.add_argument(
+        "--download",
+        action="store_true",
+        help="Update meta entries and start the download process.",
+    )
+    parser.add_argument(
+        "--docgen",
+        type=str,
+        metavar="folder",
+        help="Generate documentation in the specified folder.",
+    )
+    return parser
+
 
 if __name__ == "__main__":
-    exit(asyncio.run(main()))
+    parser = parse_arguments()
+    args = parser.parse_args()
+
+    # Display help if no arguments are provided
+    if not any(vars(args).values()):
+        parser.print_help()
+        exit(1)
+
+    if args.download:
+        exit(asyncio.run(main()))
+    elif args.docgen:
+        from docgen import DocGen  # Assuming DocGen is implemented in docgen module
+
+        docgen = DocGen(docdir=args.docgen)
+        docgen.generate()
