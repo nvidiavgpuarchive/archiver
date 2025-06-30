@@ -6,8 +6,8 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from math import floor
-from os.path import join, exists
-from typing import TypedDict, Any
+from os.path import exists, join
+from typing import Any, TypedDict
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -130,6 +130,7 @@ class DocGen:
         # readme
         self._logger.info("Generating README and static files...")
         self._gen_readme(driver_parted_index, non_driver_parted_index, db_dump)
+        utils.remove_files([join(self._docdir, "index/.md")])  # clean up
 
         # Copyover static files
         self._copy_static_files()
@@ -204,14 +205,14 @@ class DocGen:
             "duplicate_ratio": str(
                 round((1 - len(set(md5_list)) / len(md5_list)) * 100, 2)
             )
-            + "%",
+            + "%25",
         }
 
         # index
         driver_indexes = [
             {
                 "option_value": k,
-                "nextlevel_url": DocGen._get_index_filepath([k]),
+                "nextlevel_url": "/" + DocGen._get_index_filepath(["Driver", k]),
                 "result_cnt": DocGen.nested_struct_count_leaves(v, str),
                 "newest_entry": DocGen.index_get_newest_entry(
                     v, db_dump, DocGen.DRIVER_PARTITION_ORDER
@@ -222,7 +223,7 @@ class DocGen:
         non_dirver_indexes = [
             {
                 "option_value": k,
-                "nextlevel_url": DocGen._get_index_filepath([k]),
+                "nextlevel_url": "/" + DocGen._get_index_filepath(["NonDriver", k]),
                 "result_cnt": DocGen.nested_struct_count_leaves(v, str),
                 "newest_entry": DocGen.index_get_newest_entry(
                     v, db_dump, DocGen.NON_DRIVER_PARTITION_ORDER
@@ -266,7 +267,7 @@ class DocGen:
                     f.write(file_content)
             elif isinstance(focus, list):  # generate filellist file
                 jinja_filelists = [
-                    {"entry": entry, "url": DocGen._get_detail_filepath(entry)}
+                    {"entry": entry, "url": "/" + DocGen._get_detail_filepath(entry)}
                     for entry in map(db_dump.get, focus)
                 ]
                 breadcrumbs = DocGen._get_breadcrumbs(
@@ -285,7 +286,7 @@ class DocGen:
                 jinja_indexes = [
                     {
                         "option_value": k,
-                        "nextlevel_url": DocGen._get_index_filepath(trail + [k]),
+                        "nextlevel_url": "/" + DocGen._get_index_filepath(trail + [k]),
                         "result_cnt": DocGen.nested_struct_count_leaves(v, str),
                         "newest_entry": DocGen.index_get_newest_entry(
                             v, db_dump, partition_order
@@ -350,21 +351,21 @@ class DocGen:
         ]
         collaspsed_filecrumbs = (
             [
-                {"name": names[i], "url": "README.md"}
+                {"name": names[i], "url": "/README.md"}
                 for i in range(0, min(len(trail), start_level))
             ]
             if start_level
-            else [{"name": "/", "url": "README.md"}]
+            else [{"name": "/", "url": "/README.md"}]
         )
         breadcrumbs = collaspsed_filecrumbs + [
-            {"name": names[i], "url": DocGen._get_index_filepath(trail[: i + 1])}
+            {"name": names[i], "url": "/" + DocGen._get_index_filepath(trail[: i + 1])}
             for i in range(start_level, len(trail))
         ]
         if entry:
             breadcrumbs.append(
                 {
                     "name": entry["meta"]["description"],
-                    "url": DocGen._get_detail_filepath(entry),
+                    "url": "/" + DocGen._get_detail_filepath(entry),
                 }
             )
         return breadcrumbs
@@ -449,7 +450,7 @@ class DocGen:
         )[0]
         return {
             "entry": most_recent_entry,
-            "url": DocGen._get_detail_filepath(most_recent_entry),
+            "url": "/" + DocGen._get_detail_filepath(most_recent_entry),
         }
 
 

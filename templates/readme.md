@@ -18,8 +18,8 @@
 The **vGPU Archive Index** serves as a programmatically generated catalog of NVIDIA vGPU drivers uploaded to the Internet Archive. The project focuses on preserving older drivers and devices by indexing these files and ensuring they are accessible for future use.
 
 - **Automated Archiving**: Built on Python scripts, the repository uses [Archiver](https://github.com/nvidiavgpuarchive/archiver) for automating the scraping and uploading of drivers, simplifying the process of maintaining the index.
-- **Dynamic Updates**: Due to the complexity of its automation and reliance on external sources, the project might encounter occasional breaks in functionality.
 - **Preservation First**: The priority is to archive as many drivers as possible; maintaining an up-to-date index, while desirable, is a secondary focus.
+- **Dynamic Updates**: Due to the nature of this project, the project might break from time to time.
 
 > Why not just download the driver from [NVIDIA's Driver Search](https://www.nvidia.com/en-us/drivers/)?
 
@@ -28,17 +28,16 @@ The NVIDIA driver search interface is quite limited—it primarily focuses on co
 ### Integrity and Verification
 All drivers uploaded to the Internet Archive are checked rigorously for integrity:
 - **Checksum Matching**: Each file’s checksum is validated before and after the upload.
-- **Compressed Files**: The integrity of compressed files is verified to ensure no corruption has occurred during the upload process.
+- **Compressed Files**: The integrity of compressed files is verified for zip files.
 
-This process minimizes the risk of file corruption, ensuring that files in the archive remain intact.
+If you encounter a broken archive, raise an issue and we'll fix it asap.
 
 ### Repository Resources
-- **dump.json**: A JSON file that fully describes this repository, listing all files and their metadata for programmatic access.
-- **Compatibility Table**: Located in the "Non-Drivers / Misc" section, providing essential compatibility information for users.
+- **dump.json**: A JSON file that fully describes this repository.
+- **Driver Catalogue**: Located in the "Non-Drivers / Misc" section, provides devices id and driver compatibility information.
 - **Index**: The repository maintains structured indexes for both drivers and non-drivers, aiding navigation.
-- **Search**: Users can search directly within the repository if they have specific files in mind.
+- **Search**: You can search directly within the repository if you have specific files in mind.
 
-### Download Methods
 Downloading via **torrents** is highly recommended:
 - The torrent files are seeded by the Internet Archive (via HTTP sources), which ensures high download speeds on top of IA bandwidth.
 - Using torrents ensures that the archived content remains available even after potential takedown requests.

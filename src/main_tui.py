@@ -6,7 +6,7 @@ from typing import Optional
 
 from pony.orm import db_session
 from rich.live import Live
-from rich.progress import ProgressColumn, Task, Progress, BarColumn, TextColumn
+from rich.progress import BarColumn, Progress, ProgressColumn, Task, TextColumn
 from rich.table import Table
 from rich.text import Text
 

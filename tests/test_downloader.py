@@ -6,10 +6,10 @@ import threading
 import time
 
 import pytest
+from ranged_handler import RangeRequestHandler
 
 import utils
 from downloader import AsyncChunkDownloader
-from ranged_handler import RangeRequestHandler
 
 FILE_SIZES = [
     ("0B", 0),

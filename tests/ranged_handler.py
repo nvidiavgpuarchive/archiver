@@ -1,6 +1,5 @@
 import os
 import re
-
 from http.server import SimpleHTTPRequestHandler
 
 

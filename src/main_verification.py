@@ -1,12 +1,12 @@
 import asyncio
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import List, Optional
 
-from pony.orm import db_session, select, commit
+from pony.orm import commit, db_session, select
 
 import db
 import utils
-from db import VerificationState, ArchiveEntry
+from db import ArchiveEntry, VerificationState
 from ia import IAClient
 from logger import get_logger
 from main_worker import WorkerState

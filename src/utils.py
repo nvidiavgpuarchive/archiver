@@ -17,7 +17,7 @@ import time
 import types
 import zipfile
 from contextlib import closing
-from typing import Coroutine, Dict, List, Tuple, Iterator
+from typing import Coroutine, Dict, Iterator, List, Tuple
 
 import aiofiles
 import aiohttp

@@ -12,7 +12,6 @@ from pony.orm import *
 import utils
 from logger import get_logger
 
-
 _logger = get_logger(__name__)
 
 

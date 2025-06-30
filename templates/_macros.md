@@ -11,7 +11,7 @@
 
 {% macro badge(subject,status, color) -%}
     {% set base_url = "https://flat.badgen.net/static/" -%}
-    {% set badge_url = (base_url + subject + '/' + status | string + '/' + color )  -%}
+    {% set badge_url = (base_url + subject | e + '/' + status | string | e + '/' + color )  -%}
     <img src="{{ badge_url }}" />
 {%- endmacro %}
 
