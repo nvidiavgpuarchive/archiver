@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import signal
 import tempfile
@@ -215,17 +216,36 @@ def parse_arguments():
         description="Download and upload NVIDIA drivers from enterprise portal.",
         formatter_class=RichHelpFormatter,
     )
-    parser.add_argument(
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
         "--download",
         action="store_true",
-        help="Update meta entries and start the download process.",
+        help="Start the whole downloading/uploading procedure.",
     )
-    parser.add_argument(
+    group.add_argument(
         "--docgen",
         type=str,
-        metavar="folder",
+        metavar="FOLDER",
         help="Generate documentation in the specified folder.",
     )
+    group.add_argument(
+        "--dump-json",
+        type=str,
+        metavar="FILENAME",
+        help="Dump database to json file.",
+    )
+    group.add_argument(
+        "--load-json",
+        type=str,
+        metavar="FILENAME",
+        help="Initiate db from dumped json file.",
+    )
+    # group.add_argument(
+    #     "--verify-ia",
+    #     action="store_true",
+    #     help="Mark all entry status to pending, and start the verification process.",
+    # )
     return parser
 
 
@@ -245,3 +265,13 @@ if __name__ == "__main__":
 
         docgen = DocGen(docdir=args.docgen)
         docgen.generate()
+    elif args.dump_json:
+        d = db.dump_completed_to_json()
+        with open(args.dump_json, "w") as f:
+            json.dump(d, f, indent=4)
+        print(
+            f"Dumped completed entries to '{args.dump_json}'. "
+            f"Total {len(d)} entries."
+        )
+    elif args.load_json:
+        db.load_from_json(args.load_json)

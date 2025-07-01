@@ -265,6 +265,7 @@ class DocGen:
                         start_level=start_level,
                     )
                     f.write(file_content)
+                self._logger.debug(f"Wrote '{detail_filepath}'")
             elif isinstance(focus, list):  # generate filellist file
                 jinja_filelists = [
                     {"entry": entry, "url": "/" + DocGen._get_detail_filepath(entry)}
@@ -279,6 +280,7 @@ class DocGen:
                         filelists=jinja_filelists, breadcrumbs=breadcrumbs
                     )
                     f.write(file_content)
+                self._logger.debug(f"Wrote '{index_filepath}'")
                 for item in focus:
                     _rec(item, trail, level + 1)
             else:  # generate index file
@@ -305,6 +307,7 @@ class DocGen:
                         cur_option=option_name,
                     )
                     f.write(file_content)
+                self._logger.debug(f"Wrote '{index_filepath}'")
                 for k, next_focus in focus.items():
                     _rec(next_focus, trail + [k], level + 1)
 

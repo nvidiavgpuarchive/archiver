@@ -5,11 +5,14 @@ list[JinjaBreadcrumb], JinjaEntry
 {% import "_macros.md" as macros -%}
 {{ macros.breadcrumbs(breadcrumbs) }}
 
-###    {{ entry.meta.description }}
+### {{ entry.file.filenames[0] if entry.file.filenames else 'No Title' }}
 
-{% for name in entry.file.filenames -%}
+{% if entry.file.filenames|length > 1 -%}
+{% for name in entry.file.filenames[1:] -%}
 > {{ name }} {{ '  ' }}
 {% endfor %}
+{% endif -%}
+
 
 {% set torrent_link = 'https://archive.org/download/' + entry.identifier + '/'+ entry.identifier +  '_archive.torrent' -%}
 {% set http_link = 'https://archive.org/compress/' + entry.identifier  -%}

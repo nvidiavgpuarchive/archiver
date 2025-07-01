@@ -47,60 +47,29 @@ class DriverMeta(db.Entity):
     archive = Optional("ArchiveEntry", reverse="meta")
 
     @staticmethod
-    def from_meta_info(meta_info: dict):
-        release_date_obj = date.fromisoformat(meta_info["releaseDate"])
-        for name in [
-            "releaseDate",
-            "downloadType",
-            "linkType",
-            "platformName",
-            "platformVersion",
-            "productName",
-            "category",
-            "checksumFormat",
-            "productFamilies",
-        ]:
-            if name not in meta_info:
-                meta_info[name] = ""
-        return DriverMeta(
-            downloadId=meta_info["downloadId"],
-            description=meta_info["description"],
-            name=meta_info["name"],
-            releaseDate=release_date_obj,
-            version=meta_info["version"],
-            downloadType=meta_info.get("downloadType"),
-            linkType=meta_info.get("linkType"),
-            platformName=meta_info.get("platformName"),
-            platformVersion=meta_info.get("platformVersion"),
-            productName=meta_info.get("productName"),
-            category=meta_info.get("category"),
-            checksumFormat=meta_info.get("checksumFormat"),
-            productFamilies=meta_info.get("productFamilies"),
+    def from_json(meta_info: dict):
+        fields = class_to_fields(DriverMeta, ["id", "archive"])
+        meta_info = {k: meta_info.get(k, None) for k in fields}
+        meta_info["releaseDate"] = (
+            date.fromisoformat(meta_info["releaseDate"])
+            if "releaseDate" in meta_info
+            else None
         )
+        meta_info = utils.dict_remove_empty_values(meta_info)
+        return DriverMeta(**meta_info)
 
     def to_json(self, include_id=False):
-        j = {
-            "downloadId": self.downloadId,
-            "description": self.description,
-            "name": self.name,
-            "releaseDate": self.releaseDate.isoformat(),
-            "version": self.version,
-            "downloadType": self.downloadType,
-            "linkType": self.linkType,
-            "platformName": self.platformName,
-            "platformVersion": self.platformVersion,
-            "productName": self.productName,
-            "category": self.category,
-            "checksumFormat": self.checksumFormat,
-            "productFamilies": self.productFamilies,
-        }
-        return j if not include_id else j | {"id": self.id}
+        exclusion = ["archive"]
+        if not include_id:
+            exclusion += ["id"]
+        fields = class_to_fields(DriverMeta, exclusion)
+        data = {k: getattr(self, k) for k in fields if getattr(self, k)}
+        data["releaseDate"] = self.releaseDate.isoformat() if self.releaseDate else None
+        return data if not include_id else {**data, "id": self.id}
 
 
 class FileChecksum(db.Entity):
     id = PrimaryKey(int, auto=True)
-    # TODO: doesn't have to be unique
-    # also add logic for duplicatoin check in main
     size = Required(int, size=64)
     md5 = Required(str)
     sha1 = Required(str)
@@ -131,26 +100,19 @@ class FileChecksum(db.Entity):
         )
 
     def to_json(self, include_id=False):
-        j = {
-            "size": self.size,
-            "md5": self.md5,
-            "sha1": self.sha1,
-            "sha256": self.sha256,
-            "sha512": self.sha512,
-            "blake2b": self.blake2b,
-            "shake_128": self.shake_128,
-            "shake_256": self.shake_256,
-            "sha224": self.sha224,
-            "sha384": self.sha384,
-            "sha3_224": self.sha3_224,
-            "sha3_256": self.sha3_256,
-            "sha3_384": self.sha3_384,
-            "sha3_512": self.sha3_512,
-            "blake2s": self.blake2s,
-            "crc32": self.crc32,
-            "filenames": self.filenames,
-        }
-        return j if not include_id else j | {"id": self.id}
+        fields = class_to_fields(FileChecksum, ["id", "archives"])
+        data = {k: getattr(self, k) for k in fields if getattr(self, k)}
+        return data if not include_id else {**data, "id": self.id}
+
+    @staticmethod
+    def from_json(json_data: dict):
+        """
+        Creates an instance of FileChecksum from the provided JSON data.
+        Constructs key-value pairs for all fields, filling missing values with None.
+        """
+        fields = class_to_fields(FileChecksum, ["id", "archives"])
+        data = {k: json_data.get(k, "") for k in fields}
+        return FileChecksum(**data)
 
 
 class ArchiveEntry(db.Entity):
@@ -180,13 +142,21 @@ db.bind(provider="sqlite", filename=utils.proj_path("config/db.sqlite"), create_
 db.generate_mapping(create_tables=True)
 
 
+def class_to_fields(cls, excludes: list[str]) -> list[str]:
+    return [
+        k
+        for k, v in cls.__dict__.items()
+        if not k.startswith("_") and not callable(v) and k not in excludes
+    ]
+
+
 @db_session
 def sync_meta_to_db(meta_list: list[dict]):
     existing_ids = select(m.downloadId for m in DriverMeta)[:]
     updated_cnt = 0
     for meta in meta_list:
         if meta["downloadId"] not in existing_ids:
-            DriverMeta.from_meta_info(meta)
+            DriverMeta.from_json(meta)
             updated_cnt += 1
     _logger.info(f"Synced {updated_cnt} meta entries to database.")
 
@@ -226,10 +196,47 @@ def get_meta_count():
 
 @db_session
 def dump_completed_to_json() -> dict[str, Union["JinjaEntry", dict]]:
+    if (
+        not DriverMeta.select().count()
+        or not FileChecksum.select().count()
+        or not ArchiveEntry.select().count()
+    ):
+        _logger.fatal(
+            "Database is empty, refusing to dump to json. Have you just created the database?"
+        )
+        exit(-1)
     ar_list = ArchiveEntry.select(verificationState=VerificationState.COMPLETE)[:]
     ar_list_json = {ar.identifier: ar.to_json(expand=True) for ar in ar_list}
     ar_list_json = utils.dict_remove_empty_values(ar_list_json)
     return ar_list_json
+
+
+@db_session
+def load_from_json(json_filepath: str):
+    if (
+        DriverMeta.select().count()
+        or FileChecksum.select().count()
+        or ArchiveEntry.select().count()
+    ):
+        _logger.fatal("Database is not empty, refusing to load from json.")
+        exit(-1)
+    with open(json_filepath, "r") as f:
+        json_data = json.load(f)
+    for k, v in json_data.items():
+        meta = DriverMeta.from_json(v["meta"])
+        file = FileChecksum.get(md5=v["file"]["md5"])
+        if not file:
+            file = FileChecksum.from_json(v["file"])
+        ArchiveEntry(
+            identifier=k,
+            meta=meta,
+            file=file,
+            ia_meta=v["ia_meta"],
+            verificationState=VerificationState.COMPLETE,
+        )
+        commit()
+        _logger.debug(f"Loaded '{k}' to db.")
+    _logger.info(f"Loaded {len(json_data)} entries from json.")
 
 
 async def __debug_remove_404_entires():

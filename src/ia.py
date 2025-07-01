@@ -1,7 +1,9 @@
 import asyncio
 import math
 import os
+import random
 import re
+import tempfile
 import urllib
 from typing import Any
 from xml.etree import ElementTree
@@ -13,6 +15,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 
 import utils
 from logger import get_logger
+from utils import proj_path
 
 _logger = get_logger("ia uploader")
 
@@ -189,7 +192,7 @@ class IAClient:
 
         headers = {k: str(v) for k, v in headers.items() if v is not None}
 
-        placeholder_filepath = await utils.generate_placeholder()
+        placeholder_filepath = await IAClient.generate_placeholder()
         await self.upload_file(bucket, placeholder_filepath, headers=headers)
 
         if not multipart:
@@ -603,6 +606,29 @@ class IAClient:
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         await self.close()
+
+    @staticmethod
+    async def generate_placeholder():
+        """
+        The code logic requires a placeholder to be uploaded in order to
+        create the bucket and init the whole upload procedure.
+        However, a blank file or if too simple would trigger IA's spam filter
+        and make bucket creation unsuccessful.
+        This function solves that, by randomize AiW and fill the placeholder.
+        """
+        async with aiofiles.open(proj_path("data/aiw.txt"), mode="r") as f:
+            aiw_text = await f.read()
+        aiw_paragraphs = aiw_text.split("\n\n")
+        random.shuffle(aiw_paragraphs)
+        aiw_paragraphs = random.choices(
+            aiw_paragraphs, k=int(len(aiw_paragraphs) * random.uniform(0.6, 0.9))
+        )
+        random_text = "\n\n".join(aiw_paragraphs)
+        tmp_fd, tmp_path = tempfile.mkstemp(prefix="placeholder_", suffix=".txt")
+        os.close(tmp_fd)  # Close the os-level file descriptor
+        async with aiofiles.open(tmp_path, mode="w") as f:
+            await f.write(random_text)
+        return tmp_path
 
 
 async def main():

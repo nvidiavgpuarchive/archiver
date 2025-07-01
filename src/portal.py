@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, TypedDict
 
 import aiofiles
 import aiohttp
-from playwright.async_api import BrowserContext, TimeoutError, async_playwright
+from playwright.async_api import BrowserContext, Page, TimeoutError, async_playwright
 from yarl import URL
 
 import utils
@@ -212,7 +212,7 @@ class NvidiaWebPortal:
             }
             for _ in range(3):
                 try:
-                    tag = await utils.playwright_wait_for_any(page, urls, timeout=30)
+                    tag = await playwright_wait_for_any(page, urls, timeout=30)
                 except Exception:
                     utils.log_error_and_raise(_logger, "Timeout on last step of login.")
 
@@ -337,6 +337,30 @@ class NvidiaWebPortal:
                 jar.update_cookies({cookie["name"]: cookie["value"]})
 
         self._session = session
+
+
+async def playwright_wait_for_any(page: Page, urls: Dict[str, str], timeout=30):
+    """
+    Wait for any of the urls to be loaded, return when any of them is loaded.
+    Raise timeout if all timeout
+    """
+
+    tasks = {
+        asyncio.create_task(page.wait_for_url(url, timeout=timeout * 1000)): tag
+        for tag, url in urls.items()
+    }
+
+    done, pending = await asyncio.wait(
+        tasks.keys(), timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+    )
+
+    for task in pending:
+        task.cancel()
+
+    for finished_task in done:
+        if finished_task.exception() is None:
+            return tasks[finished_task]
+    raise TimeoutError("Timeout, no url matches the criteria.")
 
 
 async def main():
