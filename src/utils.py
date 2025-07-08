@@ -106,6 +106,45 @@ async def zip_verify_crc(zippath: str) -> bool:
         return False
 
 
+async def zip_decompress(zippath: str, dest_folder: str) -> list[str]:
+    """
+    Decompresses a zip file using 7-zip asynchronously into the specified destination folder.
+    """
+
+    if shutil.which("7z") is None:
+        raise Exception("7z not found, please install it.")
+
+    # Ensure destination folder exists
+    os.makedirs(dest_folder, exist_ok=True)
+
+    try:
+        # Execute 7-zip extraction command asynchronously
+        process = await asyncio.create_subprocess_exec(
+            "7z",
+            "x",
+            zippath,
+            f"-o{dest_folder}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            raise Exception(f"7z extraction failed: {stderr.decode().strip()}")
+
+        # Collect file paths of extracted files
+        decompressed_files = []
+        for root, _, files in os.walk(dest_folder):
+            for file in files:
+                decompressed_files.append(os.path.abspath(os.path.join(root, file)))
+
+        return decompressed_files
+
+    except Exception as e:
+        raise Exception(f"Async extraction failed: {e}")
+
+
 def check_non_exist(filepaths: list[str]) -> list[str]:
     """
     Accepts a list of absolute filepaths, return a list of str

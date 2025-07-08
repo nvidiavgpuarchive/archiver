@@ -91,6 +91,9 @@ class FileChecksum(db.Entity):
     filenames = Required(Json)
     archives = Set("ArchiveEntry", reverse="file")
 
+    zip_content = Optional(Json)
+    extra = Optional(Json)
+
     @staticmethod
     def from_hash_dict(filepath, hash_dict: dict):
         return FileChecksum(
@@ -110,8 +113,14 @@ class FileChecksum(db.Entity):
         Creates an instance of FileChecksum from the provided JSON data.
         Constructs key-value pairs for all fields, filling missing values with None.
         """
-        fields = class_to_fields(FileChecksum, ["id", "archives"])
+        fields = class_to_fields(
+            FileChecksum, ["id", "archives", "extra", "zip_content"]
+        )
         data = {k: json_data.get(k, "") for k in fields}
+        for k in ["extra", "zip_content"]:  # migration
+            if k in data:
+                data[k] = json.loads(data[k])
+
         return FileChecksum(**data)
 
 
@@ -126,6 +135,7 @@ class ArchiveEntry(db.Entity):
     file = Optional("FileChecksum", reverse="archives")
 
     verificationState = Required(str, default=VerificationState.NOT_VERIFIED)
+    extra = Optional(Json)
 
     def to_json(self, expand=False):
         return {
@@ -270,11 +280,10 @@ async def __debug_remove_404_entires():
 
 
 async def main():
-    j = dump_completed_to_json()
-    with open("/tmp/test.json", "w") as f:
-        json.dump(j, f, indent=4)
+    pass
 
 
+# with open()
 # Example usage
 if __name__ == "__main__":
     import asyncio

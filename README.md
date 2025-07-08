@@ -17,8 +17,9 @@ interactions with storage providers, and portal-like operations for organizing m
 - Pluggable storage and metadata management
 - Email client integration for notifications or workflow automation
 - Parallel and robust workflow with graceful shutdown handling
-- Integration with remote storage (e.g., archival backend)
+- Integration with internet archive
 - Detailed logging and progress tracking
+- Conversion between sqlite and json format
 
 ## Setup Instructions
 
@@ -45,10 +46,14 @@ interactions with storage providers, and portal-like operations for organizing m
     ```
 
 3. **Configuration**  
-   Rename the `config.example/` dir into `config/` and edit it to suit your need.
+   Rename the `config.example/` dir into `config/` and edit it 
 
 
 4. **Running the Application**
     ```bash
     uv run python main.py --help 
     ```
+
+### Database migration 
+
+Db schema could change after code is updated, but most changes can be solved automatically by dumping to json (from old ver.) and reimport the json (in the new ver.) 
