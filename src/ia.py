@@ -614,20 +614,23 @@ class IAClient:
         create the bucket and init the whole upload procedure.
         However, a blank file or if too simple would trigger IA's spam filter
         and make bucket creation unsuccessful.
-        This function solves that, by randomize AiW and fill the placeholder.
+        This function solves that, by randomize AiW and Bible and fill the placeholder.
         """
         async with aiofiles.open(proj_path("data/aiw.txt"), mode="r") as f:
             aiw_text = await f.read()
-        aiw_paragraphs = aiw_text.split("\n\n")
-        random.shuffle(aiw_paragraphs)
-        aiw_paragraphs = random.choices(
-            aiw_paragraphs, k=int(len(aiw_paragraphs) * random.uniform(0.6, 0.9))
+        async with aiofiles.open(proj_path("data/pg10.txt"), mode="r") as f:
+            pg10_text = await f.read()
+        combined = aiw_text + pg10_text
+        paragraphs = combined.split("\n\n")
+        random.shuffle(paragraphs)
+        paragraphs = random.choices(
+            paragraphs, k=int(len(paragraphs) * random.uniform(0.6, 0.9))
         )
-        random_text = "\n\n".join(aiw_paragraphs)
-        tmp_fd, tmp_path = tempfile.mkstemp(prefix="placeholder_", suffix=".txt")
+        random_text = "\n\n".join(paragraphs)
+        tmp_fd, tmp_path = tempfile.mkstemp(prefix="ph_", suffix=".dat")
         os.close(tmp_fd)  # Close the os-level file descriptor
-        async with aiofiles.open(tmp_path, mode="w") as f:
-            await f.write(random_text)
+        async with aiofiles.open(tmp_path, mode="wb") as f:
+            await f.write(random_text.encode("utf-8"))
         return tmp_path
 
 
@@ -645,8 +648,7 @@ async def main():
         bucket = "nvgpu_NVIDIA-GRID-Windows-418.197.02-427.33.zip"
         res = await client.get_info(bucket)
         pprint(res)
-        return  # # Use random bucket name to avoid conflicts for every test run  # bucket =  #
-        # "testbucket-" + "".join(random.choices(string.ascii_lowercase, k=10))  #  # limits =  #  # await client.check_limits(bucket)  # pprint(limits)  # print(f"Using bucket: {bucket}")  #  # print("Starting multipart upload...")  # await client.create_bucket(bucket=bucket,  #                            filepaths=[dummy_path],  #  #  #  #  #  #  #  #  #  #  #                            meta_mediatype="data",  #  #  #  #  #  #  #  #  #  #  #                            meta_title="Testzip expire after 30 days",  #  #  #  #  #  #  #                            meta_description="I'm trying the mulitpart uploading feature  #                            "  #                                             "so large  #                            files won't "  #  #                            "break  #  #  #                            easily.",  #  #  #  #  #  #  #  #  #  #  #                            meta_collection="test_collection",  #  #  #  #  #  #  #  #  #                            multipart=True, )  #  # print("Upload complete. Verifying  #  #                            upload...")  #  # info = await client.get_info(bucket)  #  #  #                            print("Bucket info:")  # print(info)
+        return
 
 
 if __name__ == "__main__":
