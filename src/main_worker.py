@@ -176,14 +176,26 @@ class Worker:
 
             # Download a checksum file if available
             if item["download"]["checksumUrl"]:
-                async with AsyncChunkDownloader(
-                    item["download"]["checksumUrl"], working_dir, proxy=https_proxy
-                ) as downloader:
-                    checksum_filepath = await utils.run_with_shutdown(
-                        downloader.download(), self._shutdown
+                checksum_filepath = None
+                for attempt in range(3):
+                    try:
+                        async with AsyncChunkDownloader(
+                            item["download"]["checksumUrl"], working_dir, proxy=https_proxy
+                        ) as downloader:
+                            checksum_filepath = await utils.run_with_shutdown(
+                                downloader.download(), self._shutdown
+                            )
+                            if checksum_filepath:
+                                filepath_list.append(checksum_filepath)
+                                break
+                    except Exception as e:
+                        self._logger.debug(
+                            f"Checksum download attempt {attempt+1} failed for {item['download']['checksumUrl']}: {e}"
+                        )
+                if not checksum_filepath:
+                    self._logger.warning(
+                        f"Checksum file {item['download']['checksumUrl']} failed after 3 attempts. Skipping."
                     )
-                    if checksum_filepath:
-                        filepath_list.append(checksum_filepath)
 
         except Exception as e:
             self._logger.warning(f"Download {item["download"]["url"]} failed: {e}")
@@ -230,6 +242,14 @@ class Worker:
         temp_dirpath = os.path.join(self._config["virustotal"]["tempdir"])
         with tempfile.TemporaryDirectory(dir=temp_dirpath) as temp_dir:
             zip_contents = await utils.zip_decompress(main_filepath, temp_dir)
+
+            # Skipping hash on zip with too many files
+            if len(zip_contents) > 8964:
+                self._logger.warning(
+                    f"Zip {main_filepath} contains {len(zip_contents)} files. Skipping."
+                )
+                return []
+
             zip_sizes = [os.path.getsize(fp) for fp in zip_contents]
             zip_relpaths = [
                 str(Path(fp).relative_to(Path(temp_dir))) for fp in zip_contents
@@ -322,7 +342,7 @@ class Worker:
                 await ia.create_bucket(
                     bucket=identifier,
                     filepaths=filepath_list,
-                    meta_mediatype="data",
+                    meta_mediatype="software",
                     meta_title=task["meta"]["description"],
                     meta_description=ia_description,
                     meta_collection=self._config["ia"]["collection"],
