@@ -5,7 +5,7 @@ import pathlib
 import re
 import ssl
 import urllib.parse
-from typing import List
+from typing import Any, List
 
 import aiofiles
 import aiohttp
@@ -24,10 +24,9 @@ class AsyncChunkDownloader:
     should be deleted once download is done or failed.
     Mulitple downloader can run at the same time.
 
-    Since nvidia don't require downlodas to be loggedin, current implementation
-    doesn't require passing through cookies.
-
-    async with AsyncChunkDownloader(url, output_dir) as downloader:
+    async with AsyncChunkDownloader(
+        url, output_dir, cookies={"name": "value"}
+    ) as downloader:
         path = await downloader.download()
 
     For simplicity's sake, each chunk is downloaded using its own session.
@@ -35,13 +34,21 @@ class AsyncChunkDownloader:
 
     global_bytes_downloaded = 0
 
-    def __init__(self, url: str, output_dir: str, num_chunks: int = 32, proxy=None):
+    def __init__(
+        self,
+        url: str,
+        output_dir: str,
+        num_chunks: int = 32,
+        proxy=None,
+        cookies: Any = None,
+    ):
         self._url = url
         self._output_dir = output_dir
         if not os.path.isdir(self._output_dir):
             os.makedirs(self._output_dir)
         self._num_chunks = num_chunks
         self._proxy = proxy  # https://user:pass@proxyserver:port
+        self._cookies = cookies
 
         self._state = "uninitialised"  # fetching_metadata, downloading, done
         self._total_bytes = 0  # filled by fetch metadata
@@ -120,7 +127,7 @@ class AsyncChunkDownloader:
         last_exception = None
         for _ in range(attempts):
             try:
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(cookies=self._cookies) as session:
                     async with session.head(self._url, proxy=self._proxy) as resp:
                         if resp.headers.get("Accept-Ranges", "") == "bytes":
                             return True
@@ -136,15 +143,18 @@ class AsyncChunkDownloader:
             return False
 
         headers = {"Range": "bytes=0-99"}
-        async with session.get(url, headers=headers, proxy=self._proxy) as resp:
-            if resp.status not in (200, 206):
-                return False
-            total = 0
-            async for chunk in resp.content.iter_chunked(n=64):
-                total += len(chunk)
-                if total > 100:
+        async with aiohttp.ClientSession(cookies=self._cookies) as session:
+            async with session.get(
+                self._url, headers=headers, proxy=self._proxy
+            ) as resp:
+                if resp.status not in (200, 206):
                     return False
-            return total == 100
+                total = 0
+                async for chunk in resp.content.iter_chunked(n=64):
+                    total += len(chunk)
+                    if total > 100:
+                        return False
+                return total == 100
 
     async def close(self):
         pass
@@ -159,7 +169,7 @@ class AsyncChunkDownloader:
         last_exception = None
         for _ in range(attempts):
             try:
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(cookies=self._cookies) as session:
                     async with session.head(self._url, proxy=self._proxy) as resp:
                         if resp.status >= 400:
                             utils.log_error_and_raise(
@@ -219,7 +229,7 @@ class AsyncChunkDownloader:
         for _ in range(attempts):
             try:
                 bytes_downloaded = 0
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(cookies=self._cookies) as session:
                     async with session.get(self._url, proxy=self._proxy) as resp:
                         resp.raise_for_status()
                         async with aiofiles.open(final_filepath, "wb") as f:
@@ -279,7 +289,9 @@ class AsyncChunkDownloader:
             )
 
             try:
-                async with aiohttp.ClientSession(connector=connector) as session:
+                async with aiohttp.ClientSession(
+                    connector=connector, cookies=self._cookies
+                ) as session:
                     async with session.get(
                         self._url, headers=headers, proxy=self._proxy
                     ) as resp:

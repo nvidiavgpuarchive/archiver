@@ -25,7 +25,6 @@ import yaml
 ## Logging
 ##
 
-
 def log_error_and_raise(logger: logging.Logger, errormsg: str):
     logger.error(errormsg)
     raise Exception(errormsg)
@@ -237,12 +236,12 @@ def run_async_blocking(awaitable_func, *args, **kwargs):
         f.result()
 
 
-async def is_link_alive(url, timeout=10):
+async def is_link_alive(url, timeout=10, proxy=None, cookies=None):
     try:
         async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=timeout)
+            timeout=aiohttp.ClientTimeout(total=timeout), cookies=cookies
         ) as session:
-            async with session.head(url, allow_redirects=True) as resp:
+            async with session.head(url, allow_redirects=True, proxy=proxy) as resp:
                 return resp.status == 200
     except Exception as e:
         # Could log the exception here if desired

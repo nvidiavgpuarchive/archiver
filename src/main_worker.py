@@ -7,6 +7,7 @@ import re
 import string
 import tempfile
 import traceback
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Optional, TypedDict
@@ -149,13 +150,18 @@ class Worker:
 
     async def _download_files(self, item: QueueItem, working_dir: str) -> list[str]:
         """Download files and return a list of file paths."""
-        if not await utils.is_link_alive(item["download"]["url"]):
+        https_proxy = self._config["global"]["https_proxy"]
+        download_cookies = item["download"].get("cookies")
+        self._logger.debug("Downloading with cookies.")
+
+        if not await utils.is_link_alive(
+            item["download"]["url"], proxy=https_proxy, cookies=download_cookies
+        ):
             self._logger.info(
                 f"Download link {item["download"]["url"]} expired, skipping."
             )
             return []
 
-        https_proxy = self._config["global"]["https_proxy"]
         num_chunks = self._config["downloader"]["num_chunks"]
         filepath_list = []
 
@@ -166,6 +172,7 @@ class Worker:
                 working_dir,
                 num_chunks=num_chunks,
                 proxy=https_proxy,
+                cookies=download_cookies,
             ) as downloader:
                 main_filepath = await utils.run_with_shutdown(
                     downloader.download(), self._shutdown
@@ -180,7 +187,10 @@ class Worker:
                 for attempt in range(3):
                     try:
                         async with AsyncChunkDownloader(
-                            item["download"]["checksumUrl"], working_dir, proxy=https_proxy
+                            item["download"]["checksumUrl"],
+                            working_dir,
+                            proxy=https_proxy,
+                            cookies=download_cookies,
                         ) as downloader:
                             checksum_filepath = await utils.run_with_shutdown(
                                 downloader.download(), self._shutdown
@@ -400,15 +410,18 @@ class Worker:
                         f"'{task['meta']['downloadId']}'",
                     )
 
+                attempted_at = datetime.now()
                 existing_ar = ArchiveEntry.get(meta=meta.id)
                 if existing_ar:
                     existing_ar.verificationState = VerificationState.PENDING
+                    existing_ar.lastAttemptAt = attempted_at
                     return existing_ar.identifier
                 else:
                     ArchiveEntry(
                         identifier=identifier,
                         meta=meta,
                         verificationState=VerificationState.PENDING,
+                        lastAttemptAt=attempted_at,
                     )
                     return identifier
 
@@ -448,6 +461,7 @@ class Worker:
                 if archive_entry:
                     archive_entry.file = file_entry
                     archive_entry.verificationState = VerificationState.NOT_VERIFIED
+                    archive_entry.lastAttemptAt = None
                 else:
                     self._logger.error(
                         f"Archive entry {

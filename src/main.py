@@ -173,27 +173,59 @@ async def main_loop(
         # get meta tasks
         def _db_task():
             with db_session:
-                if state_cnt[VerificationState.INCOMPLETE]:
-                    meta_json = (
+                # New / never-attempted tasks first.
+                meta = (
+                    select(
+                        m
+                        for m in DriverMeta
+                        if not ArchiveEntry.select(lambda a: a.meta == m)
+                    )
+                    .first()
+                )
+                if meta:
+                    return meta.to_json()
+
+                archive = (
+                    select(
+                        a
+                        for a in ArchiveEntry
+                        if a.verificationState == VerificationState.INCOMPLETE
+                        and a.lastAttemptAt == None
+                    )
+                    .first()
+                )
+                if not archive:
+                    archive = (
                         select(
                             a
                             for a in ArchiveEntry
                             if a.verificationState == VerificationState.INCOMPLETE
                         )
+                        .order_by(lambda a: a.lastAttemptAt)
                         .first()
-                        .meta.to_json()
                     )
-                else:
-                    meta_json = (
-                        select(
-                            m
-                            for m in DriverMeta
-                            if not ArchiveEntry.select(lambda a: a.meta == m)
-                        )
-                        .first()
-                        .to_json()
-                    )
-            return meta_json
+                return archive.meta.to_json()
+#                 if state_cnt[VerificationState.INCOMPLETE]: 
+#                     meta_json = (
+#                         select(
+#                             a
+#                             for a in ArchiveEntry
+#                             if a.verificationState == VerificationState.INCOMPLETE
+#                         )
+#                         .first()
+#                         .meta.to_json()
+#                     )
+#                 else:
+#                     meta_json = (
+#                         select(
+#                             m
+#                             for m in DriverMeta
+#                             if not ArchiveEntry.select(lambda a: a.meta == m)
+#                         )
+#                         .first()
+#                         .to_json()
+#                     )
+#             return meta_json
 
         try:
             meta_json = await asyncio.to_thread(_db_task)

@@ -3,7 +3,7 @@
 # 2. if a function is full of pony code, isolate it into a seperate thread
 import json
 import os
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from typing import Union
 
@@ -135,6 +135,7 @@ class ArchiveEntry(db.Entity):
     file = Optional("FileChecksum", reverse="archives")
 
     verificationState = Required(str, default=VerificationState.NOT_VERIFIED)
+    lastAttemptAt = Optional(datetime)
     extra = Optional(Json)
 
     def to_json(self, expand=False):

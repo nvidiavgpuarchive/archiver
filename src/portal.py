@@ -25,7 +25,7 @@ class MetaInfo(TypedDict):
     linkType: str
     category: str
     downloadType: str
-    downloadId: str
+    downloadId: str # unique
     name: str
     productName: str
     releaseDate: str
@@ -48,6 +48,7 @@ class DownloadInfo(TypedDict):
     id: str
     url: str
     checksumUrl: str
+    cookies: dict[str, str]
 
 
 class NvidiaWebPortal:
@@ -106,7 +107,9 @@ class NvidiaWebPortal:
         async with self._session.post(url, json=data, proxy=self._https_proxy) as resp:
             if resp.status == 200:
                 json_data = await resp.json()
-                return json_data["downloadUrls"][0]
+                download_info = json_data["downloadUrls"][0]
+                download_info["cookies"] = self._get_session_cookies()
+                return download_info
             else:
                 utils.log_error_and_raise(
                     _logger,
@@ -338,6 +341,11 @@ class NvidiaWebPortal:
 
         self._session = session
 
+    def _get_session_cookies(self) -> dict[str, str]:
+        if not self._session:
+            return {}
+        return {cookie.key: cookie.value for cookie in self._session.cookie_jar}
+
 
 async def playwright_wait_for_any(page: Page, urls: Dict[str, str], timeout=30):
     """
@@ -390,20 +398,51 @@ async def main():
             for _ in range(3):
                 try:
                     download = await portal.get_download_url(meta["downloadId"])
+                    return download
                 except:
                     continue
 
-            return download
+            return ""
 
-    semaphore = asyncio.Semaphore(32)
-    downloads = await asyncio.gather(
-        *(
-            download_info_worker(taskid, meta, semaphore)
-            for taskid, meta in enumerate(metas)
+    semaphore = asyncio.Semaphore(128)
+    # downloads.json: {downloadId: {MetaInfo, DownloadInfo}}
+
+    while True: 
+        existing_downloads = {}
+        if os.path.exists(utils.proj_path("config/downloads.json")):
+            with open(utils.proj_path("config/downloads.json"), "r") as f:
+                existing_downloads = json.loads(f.read())
+
+
+        missing_metas = [
+            meta for meta in metas
+            if meta["downloadId"] not in existing_downloads
+        ]
+
+        if not missing_metas:
+            _logger.info("The downloads.json is complete!")
+            return
+        else :
+            _logger.warning(f"Starting a new iteration, {len(missing_metas)} entries left to download.")
+
+
+        missing_infos = await asyncio.gather(
+            *(
+                download_info_worker(taskid, meta, semaphore)
+                for taskid, meta in enumerate(missing_metas)
+            )
         )
-    )
-    with open(utils.proj_path("config/downloads.json"), "w") as f:
-        f.write(json.dumps(downloads, indent=4, default=str))
+
+        downloads = existing_downloads | {
+            meta["downloadId"] : {"meta": meta,
+                                  "info" : {k:v for k,v in info.items()  if k != "cookies"}
+            }
+            for meta, info in zip(missing_metas, missing_infos)
+            if info
+        }
+
+        with open(utils.proj_path("config/downloads.json"), "w") as f:
+            f.write(json.dumps(downloads, indent=4, default=str))
 
 
 if __name__ == "__main__":

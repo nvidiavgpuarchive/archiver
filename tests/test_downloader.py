@@ -4,6 +4,7 @@ import os
 import tempfile
 import threading
 import time
+from http.cookies import SimpleCookie
 
 import pytest
 from ranged_handler import RangeRequestHandler
@@ -20,11 +21,51 @@ FILE_SIZES = [
 ]
 
 
-def run_http_server(directory, port, stop_event: threading.Event, ranged_support=True):
+class CookieRequiredMixin:
+    REQUIRED_COOKIE_NAME = "test_session"
+    REQUIRED_COOKIE_VALUE = "letmein"
+
+    def send_head(self):
+        cookie = SimpleCookie(self.headers.get("Cookie", ""))
+        if (
+            self.REQUIRED_COOKIE_NAME not in cookie
+            or cookie[self.REQUIRED_COOKIE_NAME].value != self.REQUIRED_COOKIE_VALUE
+        ):
+            self.send_error(403, "Forbidden")
+            return None
+        return super().send_head()
+
+
+class CookieRequiredRangeHandler(CookieRequiredMixin, RangeRequestHandler):
+    pass
+
+
+class CookieRequiredSimpleHandler(
+    CookieRequiredMixin, http.server.SimpleHTTPRequestHandler
+):
+    pass
+
+
+def run_http_server(
+    directory,
+    port,
+    stop_event: threading.Event,
+    ranged_support=True,
+    require_cookie=False,
+):
     os.chdir(directory)
-    handler = (
-        RangeRequestHandler if ranged_support else http.server.SimpleHTTPRequestHandler
-    )
+    if require_cookie:
+        handler = (
+            CookieRequiredRangeHandler
+            if ranged_support
+            else CookieRequiredSimpleHandler
+        )
+    else:
+        handler = (
+            RangeRequestHandler
+            if ranged_support
+            else http.server.SimpleHTTPRequestHandler
+        )
     httpd = http.server.ThreadingHTTPServer(("localhost", port), handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -33,11 +74,12 @@ def run_http_server(directory, port, stop_event: threading.Event, ranged_support
     thread.join()
 
 
-def start_server(tempdir, ranged_support=True):
+def start_server(tempdir, ranged_support=True, require_cookie=False):
     stop_event = threading.Event()
     port = utils.find_free_port()
     server_thread = threading.Thread(
-        target=run_http_server, args=(tempdir, port, stop_event, ranged_support)
+        target=run_http_server,
+        args=(tempdir, port, stop_event, ranged_support, require_cookie),
     )
     server_thread.start()
     time.sleep(1)  # wait for server
@@ -55,9 +97,11 @@ def testfile(request):
         yield tempdir, file_path
 
 
-async def run_test(url, source_file):
+async def run_test(url, source_file, cookies=None):
     with tempfile.TemporaryDirectory() as output_dir:
-        downloader = AsyncChunkDownloader(url, output_dir, num_chunks=8)
+        downloader = AsyncChunkDownloader(
+            url, output_dir, num_chunks=8, cookies=cookies
+        )
         output_file = await downloader.download()
         await downloader.close()
 
@@ -95,3 +139,54 @@ async def test_chunked_downloader_without_range(testfile):
     finally:
         stop_event.set()
         server_thread.join()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ranged_support", [True, False])
+async def test_downloader_sends_cookies(ranged_support):
+    cookies = {
+        CookieRequiredMixin.REQUIRED_COOKIE_NAME: (
+            CookieRequiredMixin.REQUIRED_COOKIE_VALUE
+        )
+    }
+
+    with tempfile.TemporaryDirectory() as tempdir:
+        source_file = os.path.join(tempdir, "testfile.bin")
+        with open(source_file, "wb") as f:
+            f.write(os.urandom(1024))
+
+        port, stop_event, server_thread = start_server(
+            tempdir, ranged_support=ranged_support, require_cookie=True
+        )
+        url = f"http://localhost:{port}/testfile.bin"
+
+        try:
+            await run_test(url, source_file, cookies=cookies)
+        finally:
+            stop_event.set()
+            server_thread.join()
+
+
+@pytest.mark.asyncio
+async def test_chunked_downloader_sends_cookies():
+    cookies = {
+        CookieRequiredMixin.REQUIRED_COOKIE_NAME: (
+            CookieRequiredMixin.REQUIRED_COOKIE_VALUE
+        )
+    }
+
+    with tempfile.TemporaryDirectory() as tempdir:
+        source_file = os.path.join(tempdir, "large-testfile.bin")
+        with open(source_file, "wb") as f:
+            f.truncate(129 * 1024 * 1024)
+
+        port, stop_event, server_thread = start_server(
+            tempdir, ranged_support=True, require_cookie=True
+        )
+        url = f"http://localhost:{port}/large-testfile.bin"
+
+        try:
+            await run_test(url, source_file, cookies=cookies)
+        finally:
+            stop_event.set()
+            server_thread.join()

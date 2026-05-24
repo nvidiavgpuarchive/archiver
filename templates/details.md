@@ -34,11 +34,13 @@ list[JinjaBreadcrumb], JinjaEntry
 
 #### Zip Content
 
-**MD5 Checksum**: `{{ entry.file.md5 }}`
+> MD5 Checksum: `{{ entry.file.md5 }}`
 
+{% if '<pre><code>' in entry.ia_meta.description -%}
 {% set pre_content = entry.ia_meta.description.split('<pre><code>')[-1].split('</code></pre>')[0] -%}
 ```text
 {% for line in pre_content.split('\n') if line -%}
 {{ line }}
 {% endfor -%}
 ```
+{% endif -%}
