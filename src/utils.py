@@ -20,10 +20,10 @@ from typing import Coroutine, Iterator, List, Tuple
 import aiofiles
 import aiohttp
 import psutil
-import yaml
 
 ## Logging
 ##
+
 
 def log_error_and_raise(logger: logging.Logger, errormsg: str):
     logger.error(errormsg)
@@ -41,11 +41,6 @@ def proj_path(filepath: str) -> str:
     """
     utils_dir = os.path.dirname(__file__)
     return os.path.join(utils_dir, "..", filepath)
-
-
-def read_config() -> dict:
-    with open(proj_path("config/config.yaml"), "r") as f:
-        return yaml.safe_load(f)
 
 
 def sanitize_filename(

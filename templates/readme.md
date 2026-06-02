@@ -15,28 +15,11 @@
 >
 > If you have found an issue with drivers or wish to request new drivers, kindly raise an issue.
 
-## Description
 
-The **vGPU Archive Index** is an open catalog of NVIDIA vGPU drivers. All drivers in the index are available for download, either directly over HTTP or through torrents. The goal is to make older and newer drivers easily accessible for anyone who needs them.
+The **vGPU Archive Index** is an open catalog of NVIDIA vGPU drivers. All drivers in the index are available for download, either directly over HTTP or through torrents. The goal is to make older and newer drivers easily accessible for anyone who needs them.  
 
-- **Automated Archiving**: Built on Python scripts, the repository uses [Archiver](https://github.com/nvidiavgpuarchive/archiver) for automating the scraping and uploading of drivers, simplifying the process of maintaining the index.
-- **Preservation First**: The priority is to archive as many drivers as possible; maintaining an up-to-date index, while desirable, is a secondary focus.
-- **Dynamic Updates**: Due to the nature of this project, the project might break from time to time.
+The index is updated periodically via an automated script, all drivers are uploaded as is and complete with checksums.   
 
-> Why not just download the driver from [NVIDIA's Driver Search](https://www.nvidia.com/en-us/drivers/)?
-
-The NVIDIA driver search interface is quite limited—it primarily focuses on consumer hardware and only lists a subset of the available drivers. Additionally, some drivers, such as GRID drivers for Windows with WDDM mode, are not readily available from NVIDIA's site. These drivers provide specific functionality critical for certain use cases, making this archive essential for preservation.
-
-### Integrity and Verification
-
-All drivers uploaded to the Internet Archive are checked rigorously for integrity:
-
-- **Checksum Matching**: Each file’s checksum is validated before and after the upload.
-- **Compressed Files**: The integrity of compressed files is verified for zip files.
-
-Note: When you download from internet archive, either via torrent or http, you are getting a zip file that includes all files in the archive bucket including the core driver zip and other trivial files such as metadata. All checksums and virustotal scans refers to the core driver file enclosed in the "overall" zip. So don't be alarmed if the md5 checksum doesn't match up, double check.
-
-If you encounter a broken archive, raise an issue and we'll fix it asap.
 
 ### Repository Overview
 
@@ -45,10 +28,7 @@ If you encounter a broken archive, raise an issue and we'll fix it asap.
 - **dump.json**: A JSON file that fully describes this repo so you can access the information programmatically.
 - **Driver Catalogue**: Located in the "Non-Drivers / Misc" section, provides devices id and driver compatibility information.
 
-Downloading via **torrents** is highly recommended:
-
-- The torrent files are seeded by the Internet Archive (via HTTP sources), which ensures high download speeds on top of IA bandwidth.
-- Using torrents ensures that the archived content remains available even after potential takedown requests.
+Downloading via **torrents** is highly recommended. Internet archive seeds the content automatically, so you'll get the normal http bandwidth + p2p bandwidth.
 
 ## Index
 
@@ -59,3 +39,7 @@ Downloading via **torrents** is highly recommended:
 ### Non-Drivers / Misc
 
 {{ macros.table_index(non_driver_indexes, "Platform Name", False) }}
+
+### Cloud Gaming Drivers 
+
+> These drivers are dumped from [AWS S3 buckets](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/nvidia-gaming-driver.html), they include support for some non-publcially available GPUs like Tesla T10.

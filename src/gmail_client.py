@@ -5,6 +5,7 @@ from typing import List, Tuple
 
 import aioimaplib
 
+import app_config
 import utils
 from logger import get_logger
 
@@ -176,12 +177,12 @@ class GmailClient:
 if __name__ == "__main__":
 
     async def main():
-        config = utils.read_config()
+        config = app_config.load_config()
         gmail_client = GmailClient(
-            config["imap"]["host"],
-            config["imap"]["port"],
-            config["imap"]["username"],
-            config["imap"]["password"],
+            config.imap.host,
+            config.imap.port,
+            config.imap.username,
+            config.imap.password,
         )
         await gmail_client.connect()
         eids = await gmail_client.search_for("account@nvidia.com", unseen=False)

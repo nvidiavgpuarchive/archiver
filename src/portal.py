@@ -14,6 +14,7 @@ import aiohttp
 from playwright.async_api import BrowserContext, Page, TimeoutError, async_playwright
 from yarl import URL
 
+import app_config
 import utils
 from gmail_client import GmailClient
 from logger import get_logger
@@ -25,7 +26,7 @@ class MetaInfo(TypedDict):
     linkType: str
     category: str
     downloadType: str
-    downloadId: str # unique
+    downloadId: str  # unique
     name: str
     productName: str
     releaseDate: str
@@ -372,18 +373,18 @@ async def playwright_wait_for_any(page: Page, urls: Dict[str, str], timeout=30):
 
 
 async def main():
-    config = utils.read_config()
+    config = app_config.load_config()
     gmail_client = GmailClient(
-        config["imap"]["host"],
-        config["imap"]["port"],
-        config["imap"]["username"],
-        config["imap"]["password"],
+        config.imap.host,
+        config.imap.port,
+        config.imap.username,
+        config.imap.password,
     )
 
     portal = NvidiaWebPortal(
-        username=config["portal"]["nvidia_username"],
-        password=config["portal"]["nvidia_password"],
-        https_proxy=config["global"]["https_proxy"],
+        username=config.portal.nvidia_username,
+        password=config.portal.nvidia_password,
+        https_proxy=config.global_.https_proxy,
         gmail_client=gmail_client,
     )
 
@@ -407,24 +408,23 @@ async def main():
     semaphore = asyncio.Semaphore(128)
     # downloads.json: {downloadId: {MetaInfo, DownloadInfo}}
 
-    while True: 
+    while True:
         existing_downloads = {}
         if os.path.exists(utils.proj_path("config/downloads.json")):
             with open(utils.proj_path("config/downloads.json"), "r") as f:
                 existing_downloads = json.loads(f.read())
 
-
         missing_metas = [
-            meta for meta in metas
-            if meta["downloadId"] not in existing_downloads
+            meta for meta in metas if meta["downloadId"] not in existing_downloads
         ]
 
         if not missing_metas:
             _logger.info("The downloads.json is complete!")
             return
-        else :
-            _logger.warning(f"Starting a new iteration, {len(missing_metas)} entries left to download.")
-
+        else:
+            _logger.warning(
+                f"Starting a new iteration, {len(missing_metas)} entries left to download."
+            )
 
         missing_infos = await asyncio.gather(
             *(
@@ -434,8 +434,9 @@ async def main():
         )
 
         downloads = existing_downloads | {
-            meta["downloadId"] : {"meta": meta,
-                                  "info" : {k:v for k,v in info.items()  if k != "cookies"}
+            meta["downloadId"]: {
+                "meta": meta,
+                "info": {k: v for k, v in info.items() if k != "cookies"},
             }
             for meta, info in zip(missing_metas, missing_infos)
             if info

@@ -13,6 +13,7 @@ import aiohttp
 from rich.pretty import pprint
 from tenacity import retry, stop_after_attempt, wait_fixed
 
+import app_config
 import utils
 from logger import get_logger
 from utils import proj_path
@@ -616,9 +617,9 @@ class IAClient:
         and make bucket creation unsuccessful.
         This function solves that, by randomize AiW and Bible and fill the placeholder.
         """
-        async with aiofiles.open(proj_path("data/aiw.txt"), mode="r") as f:
+        async with aiofiles.open(proj_path("assets/aiw.txt"), mode="r") as f:
             aiw_text = await f.read()
-        async with aiofiles.open(proj_path("data/pg10.txt"), mode="r") as f:
+        async with aiofiles.open(proj_path("assets/pg10.txt"), mode="r") as f:
             pg10_text = await f.read()
         combined = aiw_text + pg10_text
         paragraphs = combined.split("\n\n")
@@ -640,10 +641,10 @@ async def main():
 
     # 2. Upload it using multipart upload to the 'test_collection' bucket
 
-    config = utils.read_config()
+    config = app_config.load_config()
     async with IAClient(
-        access_key=config["ia"]["s3_access_key"],
-        secret_key=config["ia"]["s3_secret_key"],
+        access_key=config.ia.s3_access_key,
+        secret_key=config.ia.s3_secret_key,
     ) as client:
         bucket = "nvgpu_NVIDIA-GRID-Windows-418.197.02-427.33.zip"
         res = await client.get_info(bucket)

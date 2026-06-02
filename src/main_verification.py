@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from pony.orm import commit, db_session, select
 
+import app_config
 import db
 import utils
 from db import ArchiveEntry, VerificationState
@@ -27,7 +28,7 @@ class VerificationWorker:
         self._delay = delay
         self._batch_size = batch_size
 
-        self._config = utils.read_config()
+        self._config = app_config.load_config()
         self._logger = get_logger(f"verification")
         self._state = WorkerState.IDLE
         self._task: Optional[asyncio.Task] = None
@@ -161,7 +162,7 @@ class VerificationWorker:
         """Perform verification of archives via IA API."""
         toverify_checksums = [a.file_md5 for a in archives_to_verify]
 
-        async with IAClient("", "", self._config["global"]["https_proxy"]) as ia:
+        async with IAClient("", "", self._config.global_.https_proxy) as ia:
             # results are tuples of filelist, meta
             results = await asyncio.gather(
                 *(

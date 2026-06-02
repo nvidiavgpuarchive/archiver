@@ -9,6 +9,7 @@ from datetime import datetime
 from pony.orm import select
 from rich_argparse import RichHelpFormatter
 
+import app_config
 from db import ArchiveEntry, DriverMeta, sync_meta_to_db
 from gmail_client import GmailClient
 from main_tui import *
@@ -77,10 +78,10 @@ async def main():
     signal.siginterrupt(signal.SIGINT, False)
 
     # config and db setup
-    config = utils.read_config()
+    config = app_config.load_config()
     db.mark_all_pending_incomplete()
 
-    download_dir = config["global"]["download_dir"]
+    download_dir = config.global_.download_dir
     if not os.path.exists(download_dir):
         os.mkdir(download_dir)
     elif os.listdir(download_dir):
@@ -90,21 +91,21 @@ async def main():
     # init workers
 
     workers = await asyncio.gather(
-        *[Worker(id, queue).start() for id in range(config["global"]["num_workers"])]
+        *[Worker(id, queue).start() for id in range(config.global_.num_workers)]
     )
     verification = await VerificationWorker().start()
 
     # main routine
     gmail_client = GmailClient(
-        config["imap"]["host"],
-        config["imap"]["port"],
-        config["imap"]["username"],
-        config["imap"]["password"],
+        config.imap.host,
+        config.imap.port,
+        config.imap.username,
+        config.imap.password,
     )
     portal = NvidiaWebPortal(
-        username=config["portal"]["nvidia_username"],
-        password=config["portal"]["nvidia_password"],
-        https_proxy=config["global"]["https_proxy"],
+        username=config.portal.nvidia_username,
+        password=config.portal.nvidia_password,
+        https_proxy=config.global_.https_proxy,
         gmail_client=gmail_client,
     )
     asyncio.create_task(gmail_client.connect())
@@ -136,7 +137,11 @@ async def main():
 
 
 async def main_loop(
-    config, portal, queue, is_worker_idle: callable, shutdown: asyncio.Event
+    config: app_config.AppConfig,
+    portal,
+    queue,
+    is_worker_idle: callable,
+    shutdown: asyncio.Event,
 ):
     """
     Mainloop, add tasks to worker one task at a time
@@ -174,26 +179,20 @@ async def main_loop(
         def _db_task():
             with db_session:
                 # New / never-attempted tasks first.
-                meta = (
-                    select(
-                        m
-                        for m in DriverMeta
-                        if not ArchiveEntry.select(lambda a: a.meta == m)
-                    )
-                    .first()
-                )
+                meta = select(
+                    m
+                    for m in DriverMeta
+                    if not ArchiveEntry.select(lambda a: a.meta == m)
+                ).first()
                 if meta:
                     return meta.to_json()
 
-                archive = (
-                    select(
-                        a
-                        for a in ArchiveEntry
-                        if a.verificationState == VerificationState.INCOMPLETE
-                        and a.lastAttemptAt == None
-                    )
-                    .first()
-                )
+                archive = select(
+                    a
+                    for a in ArchiveEntry
+                    if a.verificationState == VerificationState.INCOMPLETE
+                    and a.lastAttemptAt == None
+                ).first()
                 if not archive:
                     archive = (
                         select(
@@ -205,27 +204,28 @@ async def main_loop(
                         .first()
                     )
                 return archive.meta.to_json()
-#                 if state_cnt[VerificationState.INCOMPLETE]: 
-#                     meta_json = (
-#                         select(
-#                             a
-#                             for a in ArchiveEntry
-#                             if a.verificationState == VerificationState.INCOMPLETE
-#                         )
-#                         .first()
-#                         .meta.to_json()
-#                     )
-#                 else:
-#                     meta_json = (
-#                         select(
-#                             m
-#                             for m in DriverMeta
-#                             if not ArchiveEntry.select(lambda a: a.meta == m)
-#                         )
-#                         .first()
-#                         .to_json()
-#                     )
-#             return meta_json
+
+        #                 if state_cnt[VerificationState.INCOMPLETE]:
+        #                     meta_json = (
+        #                         select(
+        #                             a
+        #                             for a in ArchiveEntry
+        #                             if a.verificationState == VerificationState.INCOMPLETE
+        #                         )
+        #                         .first()
+        #                         .meta.to_json()
+        #                     )
+        #                 else:
+        #                     meta_json = (
+        #                         select(
+        #                             m
+        #                             for m in DriverMeta
+        #                             if not ArchiveEntry.select(lambda a: a.meta == m)
+        #                         )
+        #                         .first()
+        #                         .to_json()
+        #                     )
+        #             return meta_json
 
         try:
             meta_json = await asyncio.to_thread(_db_task)

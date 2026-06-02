@@ -12,6 +12,7 @@ from typing import Optional, TypedDict
 
 from pony.orm import db_session
 
+import app_config
 import utils
 from db import ArchiveEntry, DriverMeta, FileChecksum, VerificationState
 from downloader import AsyncChunkDownloader
@@ -37,7 +38,7 @@ class Worker:
         self._worker_id = worker_id
         self._queue = queue
 
-        self._config = utils.read_config()
+        self._config = app_config.load_config()
         self._logger = get_logger(f"worker {worker_id}")
         self._state = WorkerState.IDLE
         self._task: Optional[asyncio.Task] = None
@@ -144,7 +145,7 @@ class Worker:
 
     async def _download_files(self, item: QueueItem, working_dir: str) -> list[str]:
         """Download files and return a list of file paths."""
-        https_proxy = self._config["global"]["https_proxy"]
+        https_proxy = self._config.global_.https_proxy
         download_cookies = item["download"].get("cookies")
         self._logger.debug("Downloading with cookies.")
 
@@ -156,7 +157,7 @@ class Worker:
             )
             return []
 
-        num_chunks = self._config["downloader"]["num_chunks"]
+        num_chunks = self._config.downloader.num_chunks
         filepath_list = []
 
         try:
@@ -270,13 +271,13 @@ class Worker:
         """Upload files to Internet Archive using the pre-allocated identifier."""
         self._logger.info(f"Start uploading '{identifier}' to IA.")
 
-        https_proxy = self._config["global"]["https_proxy"]
+        https_proxy = self._config.global_.https_proxy
         main_filepath = filepath_list[0]
         main_filename = os.path.basename(main_filepath)
         main_checksum_d = hash_dict[main_filename]
 
         # Prepare metadata
-        ia_description = self._config["ia"]["common_description"]
+        ia_description = self._config.ia.common_description
         if main_filename.endswith(".zip"):
             file_list = await asyncio.to_thread(utils.zip_listfiles, main_filepath)
             ia_description += (
@@ -292,9 +293,9 @@ class Worker:
 
         try:
             async with IAClient(
-                self._config["ia"]["s3_access_key"],
-                self._config["ia"]["s3_secret_key"],
-                https_proxy=https_proxy if self._config["ia"]["use_proxy"] else None,
+                self._config.ia.s3_access_key,
+                self._config.ia.s3_secret_key,
+                https_proxy=https_proxy if self._config.ia.use_proxy else None,
                 multipart_chunksize=1024**2 * 256,  # 256MB
             ) as ia:
                 # verify, if all files already exist on ia then skip
@@ -318,7 +319,7 @@ class Worker:
                     meta_mediatype="software",
                     meta_title=task["meta"]["description"],
                     meta_description=ia_description,
-                    meta_collection=self._config["ia"]["collection"],
+                    meta_collection=self._config.ia.collection,
                     custom_metadata=custom_metadata,
                     multipart=os.path.getsize(main_filepath) > 1024**2 * 256,
                 )
@@ -360,7 +361,7 @@ class Worker:
         random_suffix = "".join(
             random.choices(string.ascii_lowercase + string.digits, k=8)
         )
-        identifier = f"{self._config['ia']['bucket_prefix']}{
+        identifier = f"{self._config.ia.bucket_prefix}{
             filename}_{random_suffix}"
 
         def _create_archive():
@@ -458,7 +459,7 @@ class Worker:
     def _create_working_dir(self) -> str:
         """Create and return working directory path."""
         working_dir = os.path.join(
-            self._config["global"]["download_dir"],
+            self._config.global_.download_dir,
             "".join(random.choices(string.ascii_lowercase, k=6)),
         )
         os.mkdir(working_dir)

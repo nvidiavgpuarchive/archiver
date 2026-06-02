@@ -264,12 +264,13 @@ async def __debug_remove_404_entires():
             if a.verificationState == VerificationState.INCOMPLETE
         )[:]
 
+        import app_config
         from ia import IAClient
 
-        config = utils.read_config()
+        config = app_config.load_config()
         async with IAClient(
-            access_key=config["ia"]["s3_access_key"],
-            secret_key=config["ia"]["s3_secret_key"],
+            access_key=config.ia.s3_access_key,
+            secret_key=config.ia.s3_secret_key,
         ) as client:
             for a in ar:
                 bucket = a.identifier
