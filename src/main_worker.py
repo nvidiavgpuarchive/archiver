@@ -5,11 +5,9 @@ import os
 import random
 import re
 import string
-import tempfile
 import traceback
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
 from typing import Optional, TypedDict
 
 from pony.orm import db_session
@@ -128,9 +126,7 @@ class Worker:
         if not await self._verify_files(filepath_list):
             raise Exception("CRC checksum failed.")
 
-        # decompress zip and compute hashes
         main_filepath = filepath_list[0]
-        zip_content = await self._hash_zip_content(main_filepath)
 
         # Process checksums and metadata
         main_filename = os.path.basename(main_filepath)
@@ -142,9 +138,7 @@ class Worker:
             raise Exception("Upload to IA failed.")
 
         # Update a database with file checksums
-        await self._update_db_on_complete(
-            identifier, main_filepath, main_checksum_d, zip_content
-        )
+        await self._update_db_on_complete(identifier, main_filepath, main_checksum_d)
 
         return filepath_list
 
@@ -241,37 +235,6 @@ class Worker:
             )
 
         return True
-
-    async def _hash_zip_content(self, main_filepath: str) -> list[dict[str, str]]:
-        """
-        Supplies zipfile path, returns dict of filepath in zip : md5 checksum
-        """
-        self._logger.info(f"Hashing zip content for {main_filepath}")
-        if not main_filepath.endswith(".zip"):
-            return []
-        temp_dirpath = os.path.join(self._config["virustotal"]["tempdir"])
-        with tempfile.TemporaryDirectory(dir=temp_dirpath) as temp_dir:
-            zip_contents = await utils.zip_decompress(main_filepath, temp_dir)
-
-            # Skipping hash on zip with too many files
-            if len(zip_contents) > 8964:
-                self._logger.warning(
-                    f"Zip {main_filepath} contains {len(zip_contents)} files. Skipping."
-                )
-                return []
-
-            zip_sizes = [os.path.getsize(fp) for fp in zip_contents]
-            zip_relpaths = [
-                str(Path(fp).relative_to(Path(temp_dir))) for fp in zip_contents
-            ]
-            zip_hashes = await asyncio.gather(
-                *(utils.async_hash(fp) for fp in zip_contents)
-            )
-
-            return [
-                {"size": zip_sizes[i], "relpath": zip_relpaths[i], "md5": zip_hashes[i]}
-                for i, _ in enumerate(zip_contents)
-            ]
 
     async def _compute_hashes(
         self, filepath_list: list[str]
@@ -439,7 +402,6 @@ class Worker:
         identifier: str,
         main_filepath: str,
         main_checksum_d: dict[str, str],
-        zip_content: list[dict[str, str]],
     ):
         """Update archive entry to complete with file checksums."""
 
@@ -454,7 +416,6 @@ class Worker:
                 this_filename = os.path.basename(main_filepath)
                 if this_filename not in file_entry.filenames:
                     file_entry.filenames.append(this_filename)
-                file_entry.zip_content = zip_content
 
                 # Update archive entry
                 archive_entry = ArchiveEntry.get(identifier=identifier)

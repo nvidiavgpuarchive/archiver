@@ -91,7 +91,6 @@ class FileChecksum(db.Entity):
     filenames = Required(Json)
     archives = Set("ArchiveEntry", reverse="file")
 
-    zip_content = Optional(Json)
     extra = Optional(Json)
 
     @staticmethod
@@ -113,13 +112,14 @@ class FileChecksum(db.Entity):
         Creates an instance of FileChecksum from the provided JSON data.
         Constructs key-value pairs for all fields, filling missing values with None.
         """
-        fields = class_to_fields(
-            FileChecksum, ["id", "archives", "extra", "zip_content"]
-        )
+        fields = class_to_fields(FileChecksum, ["id", "archives"])
         data = {k: json_data.get(k, "") for k in fields}
-        for k in ["extra", "zip_content"]:  # migration
-            if k in data:
-                data[k] = json.loads(data[k])
+        for k in ["extra"]:  # migration
+            if isinstance(data.get(k), str):
+                if data[k]:
+                    data[k] = json.loads(data[k])
+                else:
+                    data.pop(k)
 
         return FileChecksum(**data)
 
@@ -144,6 +144,7 @@ class ArchiveEntry(db.Entity):
             "ia_meta": self.ia_meta,
             "meta": self.meta if not expand else self.meta.to_json(),
             "file": self.file if not expand else self.file.to_json(),
+            "extra": self.extra,
         }
 
 
@@ -243,6 +244,7 @@ def load_from_json(json_filepath: str):
             meta=meta,
             file=file,
             ia_meta=v["ia_meta"],
+            extra=v.get("extra"),
             verificationState=VerificationState.COMPLETE,
         )
         commit()
