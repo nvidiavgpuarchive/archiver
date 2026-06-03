@@ -157,11 +157,12 @@ def class_to_fields(cls: type, excludes: list[str]) -> list[str]:
 
 @db_session
 def sync_meta_to_db(meta_list: list[dict[str, Any]]) -> None:
-    existing_ids = select(m.downloadId for m in DriverMeta)[:]
+    existing_ids = set(select(m.downloadId for m in DriverMeta)[:])
     updated_cnt = 0
     for meta in meta_list:
         if meta["downloadId"] not in existing_ids:
             DriverMeta.from_json(meta)
+            existing_ids.add(meta["downloadId"])
             updated_cnt += 1
     _logger.info(f"Synced {updated_cnt} meta entries to database.")
 

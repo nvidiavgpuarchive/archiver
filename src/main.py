@@ -119,7 +119,6 @@ async def main(source: str) -> None:
         raise ValueError(f"Unknown sync source: {source}")
 
     try:
-        await ui_worker.start()
         await main_loop(
             config=config,
             portal=portal,
@@ -196,7 +195,7 @@ async def main_loop(
                         continue
                     if isinstance(portal, NvidiaWebPortal) and meta_is_s3:
                         continue
-                    if not ArchiveEntry.select(lambda a: a.meta == meta).first():
+                    if not meta.archive:
                         return meta.to_json()
 
                 for archive in select(

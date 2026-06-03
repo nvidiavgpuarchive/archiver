@@ -33,3 +33,5 @@ If you have found an issue with drivers or wish to request new drivers, kindly r
 ### Cloud Gaming Drivers 
 
 > These drivers are dumped from [AWS S3 buckets](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/nvidia-gaming-driver.html), they include support for some non-publcially available GPUs like Tesla T10.
+
+{{ macros.table_index(gaming_driver_indexes, "Platform Name", True) }}

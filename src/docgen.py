@@ -56,16 +56,16 @@ class DocGen:
         "platformName",
         "platformVersion",
         "version",
-        "releaseDate",
-        "description",
         "name",
     ]
     NON_DRIVER_PARTITION_ORDER = [
         "category",
         "platformName",
-        "releaseDate",
-        "description",
         "name",
+    ]
+    GAMING_DRIVER_PARTITION_ORDER = [
+        "category",
+        "platformName",
     ]
 
     def __init__(self, docdir: str) -> None:
@@ -103,6 +103,11 @@ class DocGen:
         non_driver_index = [
             k for k in db_dump.keys() if db_dump[k]["meta"]["category"] == "NonDriver"
         ]
+        gaming_driver_index = [
+            k
+            for k in db_dump.keys()
+            if db_dump[k]["meta"]["category"] == "GamingDriver"
+        ]
 
         driver_parted_index = self._partition_index(
             db_dump,
@@ -116,6 +121,12 @@ class DocGen:
             DocGen.NON_DRIVER_PARTITION_ORDER,
             5,
         )
+        gaming_driver_parted_index = self._partition_index(
+            db_dump,
+            gaming_driver_index,
+            DocGen.GAMING_DRIVER_PARTITION_ORDER,
+            5,
+        )
 
         self._gen_content(
             driver_parted_index, db_dump, DocGen.DRIVER_PARTITION_ORDER, start_level=1
@@ -126,10 +137,21 @@ class DocGen:
             DocGen.NON_DRIVER_PARTITION_ORDER,
             start_level=1,
         )
+        self._gen_content(
+            gaming_driver_parted_index,
+            db_dump,
+            DocGen.GAMING_DRIVER_PARTITION_ORDER,
+            start_level=1,
+        )
 
         # readme
         self._logger.info("Generating README and static files...")
-        self._gen_readme(driver_parted_index, non_driver_parted_index, db_dump)
+        self._gen_readme(
+            driver_parted_index,
+            non_driver_parted_index,
+            gaming_driver_parted_index,
+            db_dump,
+        )
         utils.remove_files([join(self._docdir, "index/.md")])  # clean up
 
         # Copyover static files
@@ -144,6 +166,8 @@ class DocGen:
         partition_order: list[str],
         level_limit: int,
     ) -> Any:
+        level_limit = min(level_limit, len(partition_order))
+
         def _rec(index: list[str], level: int) -> Any:
             if (  # turn nested index into a filelist, if too few items, or linear shape
                 len(index) <= 15 or level >= level_limit
@@ -186,14 +210,23 @@ class DocGen:
         self,
         parted_driver_index: dict[str, Any],
         parted_non_driver_index: dict[str, Any],
+        parted_gaming_driver_index: dict[str, Any],
         db_dump: dict[str, JinjaEntry],
     ) -> None:
 
         # readme meta
         md5_list = [e["file"]["md5"] for e in db_dump.values()]
+        all_parted_index = {}
+        for index in [
+            parted_driver_index,
+            parted_non_driver_index,
+            parted_gaming_driver_index,
+        ]:
+            if isinstance(index, dict):
+                all_parted_index.update(index)
         readme_meta = {
             "last_updated": DocGen.index_get_newest_entry(
-                parted_driver_index | parted_non_driver_index,
+                all_parted_index,
                 db_dump,
                 DocGen.DRIVER_PARTITION_ORDER,
             )["entry"]["meta"]["releaseDate"],
@@ -201,6 +234,9 @@ class DocGen:
             "driver_count": DocGen.nested_struct_count_leaves(parted_driver_index, str),
             "non_driver_count": DocGen.nested_struct_count_leaves(
                 parted_non_driver_index, str
+            ),
+            "gaming_driver_count": DocGen.nested_struct_count_leaves(
+                parted_gaming_driver_index, str
             ),
             "duplicate_ratio": str(
                 round((1 - len(set(md5_list)) / len(md5_list)) * 100, 2)
@@ -231,10 +267,26 @@ class DocGen:
             }
             for k, v in parted_non_driver_index["NonDriver"].items()
         ]
+        gaming_driver_indexes = [
+            {
+                "option_value": k,
+                "nextlevel_url": "/" + DocGen._get_index_filepath(["GamingDriver", k]),
+                "result_cnt": DocGen.nested_struct_count_leaves(v, str),
+                "newest_entry": DocGen.index_get_newest_entry(
+                    v, db_dump, DocGen.GAMING_DRIVER_PARTITION_ORDER
+                ),
+            }
+            for k, v in (
+                parted_gaming_driver_index.get("GamingDriver", {}).items()
+                if isinstance(parted_gaming_driver_index, dict)
+                else []
+            )
+        ]
         with utils.TouchAndOpen(join(self._docdir, "README.md"), "w") as f:
             file_content = self._env.get_template("readme.md").render(
                 non_driver_indexes=non_dirver_indexes,
                 driver_indexes=driver_indexes,
+                gaming_driver_indexes=gaming_driver_indexes,
                 readme_meta=readme_meta,
             )
             f.write(file_content)
