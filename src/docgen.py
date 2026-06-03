@@ -68,7 +68,7 @@ class DocGen:
         "name",
     ]
 
-    def __init__(self, docdir: str):
+    def __init__(self, docdir: str) -> None:
 
         self._docdir = docdir
 
@@ -88,7 +88,7 @@ class DocGen:
         utils.rm_dir(join(docdir, "details"))
         utils.rm_dir(join(docdir, "index"))
 
-    def generate(self):
+    def generate(self) -> None:
         # dump db
         self._logger.info("Dumping completed entries to json file... ")
         db_dump: dict[str, JinjaEntry] = db.dump_completed_to_json()
@@ -143,8 +143,8 @@ class DocGen:
         unparted_index: list[str],
         partition_order: list[str],
         level_limit: int,
-    ):
-        def _rec(index, level):
+    ) -> Any:
+        def _rec(index: list[str], level: int) -> Any:
             if (  # turn nested index into a filelist, if too few items, or linear shape
                 len(index) <= 15 or level >= level_limit
             ):
@@ -184,10 +184,10 @@ class DocGen:
 
     def _gen_readme(
         self,
-        parted_driver_index,
-        parted_non_driver_index,
+        parted_driver_index: dict[str, Any],
+        parted_non_driver_index: dict[str, Any],
         db_dump: dict[str, JinjaEntry],
-    ):
+    ) -> None:
 
         # readme meta
         md5_list = [e["file"]["md5"] for e in db_dump.values()]
@@ -241,15 +241,15 @@ class DocGen:
 
     def _gen_content(
         self,
-        parted_index,
+        parted_index: Any,
         db_dump: dict[str, JinjaEntry],
         partition_order: list[str],
         start_level: int = 0,
         level_limit: int = 8964,
-    ):
+    ) -> None:
         # trail is the sequence of options went through, including current
         # does not include detail file, only works for index and filelists
-        def _rec(focus: Any, trail: list[str], level: int):
+        def _rec(focus: Any, trail: list[str], level: int) -> None:
             if level >= level_limit:
                 return
             if isinstance(focus, str):  # generate details file
@@ -313,7 +313,7 @@ class DocGen:
 
         _rec(parted_index, [], level=0)
 
-    def _copy_static_files(self):
+    def _copy_static_files(self) -> None:
         src_dir = proj_path("templates/static")
         for item in os.listdir(src_dir):
             src_path = join(src_dir, item)
@@ -324,12 +324,12 @@ class DocGen:
                 shutil.copy2(src_path, dst_path)  # shutil.copy2 preserves metadata
 
     @staticmethod
-    def _update_placeholder(docdir):
+    def _update_placeholder(docdir: str) -> None:
         with utils.TouchAndOpen(os.path.join(docdir, ".docgen"), "w") as f:
             f.write(str(round(time.time(), -5)))
 
     @staticmethod
-    def _get_detail_filepath(entry: JinjaEntry):
+    def _get_detail_filepath(entry: JinjaEntry) -> str:
         return (
             "details/"
             + hashlib.md5(entry["identifier"].encode("utf-8")).hexdigest()[:6]
@@ -345,7 +345,10 @@ class DocGen:
 
     @staticmethod
     def _get_breadcrumbs(
-        trail: list[str], order: list[str], entry=None, start_level=0
+        trail: list[str],
+        order: list[str],
+        entry: JinjaEntry | None = None,
+        start_level: int = 0,
     ) -> list[JinjaBreadcrumb]:
 
         names = [
@@ -388,8 +391,10 @@ class DocGen:
 
     # sort options
     @staticmethod
-    def _option_cmp_keyfunc(key: str) -> tuple:  # to allow correct versioning
-        def _complement_str(s: str):
+    def _option_cmp_keyfunc(
+        key: str,
+    ) -> tuple[int | float, int | float, str]:  # to allow correct versioning
+        def _complement_str(s: str) -> str:
             if s == "OTHER":  # dirty patch
                 return "0" * 10
             return "".join(
@@ -412,7 +417,7 @@ class DocGen:
     def flatten_neste_struct(struct: list | dict) -> list[str]:
         res = []
 
-        def _rec(s):
+        def _rec(s: Any) -> None:
             if isinstance(s, list):
                 [_rec(item) for item in s]
             elif isinstance(s, dict):

@@ -1,9 +1,16 @@
 import os
 import re
 from http.server import SimpleHTTPRequestHandler
+from io import BufferedIOBase
 
 
-def copy_byte_range(infile, outfile, start=None, stop=None, bufsize=16 * 1024):
+def copy_byte_range(
+    infile: BufferedIOBase,
+    outfile: BufferedIOBase,
+    start: int | None = None,
+    stop: int | None = None,
+    bufsize: int = 16 * 1024,
+) -> None:
     """Like shutil.copyfileobj, but only copy a range of the streams.
 
     Both start and stop are inclusive.
@@ -21,7 +28,7 @@ def copy_byte_range(infile, outfile, start=None, stop=None, bufsize=16 * 1024):
 BYTE_RANGE_RE = re.compile(r"bytes=(\d+)-(\d+)?$")
 
 
-def parse_byte_range(byte_range):
+def parse_byte_range(byte_range: str) -> tuple[int | None, int | None]:
     """Returns the two numbers in 'bytes=123-456' or throws ValueError.
 
     The last number or both numbers may be None.
@@ -47,7 +54,9 @@ class RangeRequestHandler(SimpleHTTPRequestHandler):
     - Override copyfile to only transmit a range when requested.
     """
 
-    def send_head(self):
+    range: tuple[int | None, int | None] | None
+
+    def send_head(self) -> BufferedIOBase | None:
         if "Range" not in self.headers:
             self.range = None
             return SimpleHTTPRequestHandler.send_head(self)
@@ -57,6 +66,9 @@ class RangeRequestHandler(SimpleHTTPRequestHandler):
             self.send_error(400, "Invalid byte range")
             return None
         first, last = self.range
+        if first is None:
+            self.send_error(400, "Invalid byte range")
+            return None
 
         # Mirroring SimpleHTTPServer.py here
         path = self.translate_path(self.path)
@@ -87,11 +99,11 @@ class RangeRequestHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         return f
 
-    def end_headers(self):
+    def end_headers(self) -> None:
         self.send_header("Accept-Ranges", "bytes")
         return SimpleHTTPRequestHandler.end_headers(self)
 
-    def copyfile(self, source, outputfile):
+    def copyfile(self, source: BufferedIOBase, outputfile: BufferedIOBase) -> None:
         if not self.range:
             return SimpleHTTPRequestHandler.copyfile(self, source, outputfile)
 

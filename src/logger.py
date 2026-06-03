@@ -10,12 +10,18 @@ class CenteredFormatter(logging.Formatter):
     # Class variable to track the longest name length
     longest_name_length = 14  # Initial default width
 
-    def __init__(self, fmt=None, datefmt=None, style="%", initial_width=14):
+    def __init__(
+        self,
+        fmt: str | None = None,
+        datefmt: str | None = None,
+        style: str = "%",
+        initial_width: int = 14,
+    ) -> None:
         super().__init__(fmt, datefmt, style)
         # Set initial width if defined
         CenteredFormatter.longest_name_length = initial_width
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         # Update the class variable if a longer name is found
         CenteredFormatter.longest_name_length = max(
             CenteredFormatter.longest_name_length, len(record.name)
@@ -29,7 +35,7 @@ class CenteredFormatter(logging.Formatter):
         return super().format(record)
 
 
-def get_logger(name=None) -> logging.Logger:
+def get_logger(name: str | None = None) -> logging.Logger:
     """
     Creates and returns a logger configured with RichHandler for rich output.
     """

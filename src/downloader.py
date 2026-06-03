@@ -5,7 +5,7 @@ import pathlib
 import re
 import ssl
 import urllib.parse
-from typing import Any, List
+from typing import Any
 
 import aiofiles
 import aiohttp
@@ -39,9 +39,9 @@ class AsyncChunkDownloader:
         url: str,
         output_dir: str,
         num_chunks: int = 32,
-        proxy=None,
+        proxy: str | None = None,
         cookies: Any = None,
-    ):
+    ) -> None:
         self._url = url
         self._output_dir = output_dir
         if not os.path.isdir(self._output_dir):
@@ -123,7 +123,7 @@ class AsyncChunkDownloader:
 
             return final_path
 
-    async def _is_url_supports_range(self, attempts=3) -> bool:
+    async def _is_url_supports_range(self, attempts: int = 3) -> bool:
         last_exception = None
         for _ in range(attempts):
             try:
@@ -156,10 +156,10 @@ class AsyncChunkDownloader:
                         return False
                 return total == 100
 
-    async def close(self):
+    async def close(self) -> None:
         pass
 
-    async def _fetch_file_metadata(self, attempts=3):
+    async def _fetch_file_metadata(self, attempts: int = 3) -> None:
         """
         HEAD request to determine total file size and range support.
         Populates internal metadata.
@@ -219,7 +219,7 @@ class AsyncChunkDownloader:
         # self._support_range = True
         self._support_range = await self._is_url_supports_range()
 
-    async def _basic_download(self, attempts=3) -> str | None:
+    async def _basic_download(self, attempts: int = 3) -> str | None:
         """
         Download the whole file in series . If error occurs, startover.
         Returns one single file, which is final.
@@ -256,7 +256,7 @@ class AsyncChunkDownloader:
             return None
 
     async def _chunk_download(
-        self, start: int, end: int, part_index: int, attempts=5
+        self, start: int, end: int, part_index: int, attempts: int = 5
     ) -> str | None:
         """
         Advanced, download one chunk only. If any error occurs, simply resume from the last
@@ -362,7 +362,7 @@ class AsyncChunkDownloader:
         )
         return chunk_filepath
 
-    def _merge_chunks(self, chunk_filelist: List[str]) -> str:
+    def _merge_chunks(self, chunk_filelist: list[str]) -> str:
         """
         await asycncio.to_thread(self._merge_chunks)
         returns merged path
@@ -387,11 +387,16 @@ class AsyncChunkDownloader:
                     os.remove(chunk_file)
         return final_path
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "AsyncChunkDownloader":
         # Optionally, perform async setup here (if needed)
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object,
+    ) -> None:
         await self.close()
 
 

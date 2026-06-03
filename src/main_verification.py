@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any
 
 from pony.orm import commit, db_session, select
 
@@ -17,22 +17,22 @@ from main_worker import WorkerState
 class VerificationArchive:
     identifier: str
     verification_state: VerificationState
-    file_md5: Optional[str] = None
-    filenames: Optional[List[str]] = None
-    ia_meta: Optional[dict] = None
+    file_md5: str | None = None
+    filenames: list[str] | None = None
+    ia_meta: dict[str, Any] | None = None
 
 
 class VerificationWorker:
 
-    def __init__(self, delay=10, batch_size=8):
+    def __init__(self, delay: int = 10, batch_size: int = 8) -> None:
         self._delay = delay
         self._batch_size = batch_size
 
         self._config = app_config.load_config()
         self._logger = get_logger(f"verification")
         self._state = WorkerState.IDLE
-        self._task: Optional[asyncio.Task] = None
-        self._shutdown: Optional[asyncio.Event] = None
+        self._task: asyncio.Task | None = None
+        self._shutdown: asyncio.Event | None = None
         self._logmsg_timer = utils.simple_timer(30)
 
     # Lifetime Control
@@ -47,12 +47,12 @@ class VerificationWorker:
         self._logger.info("Verification worker started.")
         return self
 
-    async def stop(self):
+    async def stop(self) -> None:
         if self._task and not self._task.done():
             self._shutdown.set()
             await self._task
 
-    async def _run(self):
+    async def _run(self) -> None:
         """
         Randomly selects n unverified entries from the database every delay seconds
         and attempts to verify them.
@@ -106,10 +106,10 @@ class VerificationWorker:
 
         return unverified_cnt
 
-    async def _cleanup_orphaned_archives(self):
+    async def _cleanup_orphaned_archives(self) -> None:
         """Mark archives without associated files as incomplete."""
 
-        def _cleanup_db():
+        def _cleanup_db() -> None:
             with db_session:
                 failed_archives = select(
                     a
@@ -131,10 +131,10 @@ class VerificationWorker:
 
     async def _get_archives_to_verify(
         self, unverified_cnt: int
-    ) -> List[VerificationArchive]:
+    ) -> list[VerificationArchive]:
         """Get a batch of archives that need verification."""
 
-        def _get_archives():
+        def _get_archives() -> list[VerificationArchive]:
             with db_session:
                 sample_cnt = min(unverified_cnt, self._batch_size)
                 toverify_archives = select(
@@ -157,8 +157,8 @@ class VerificationWorker:
         return await asyncio.to_thread(_get_archives)
 
     async def _perform_verification(
-        self, archives_to_verify: List[VerificationArchive]
-    ) -> List:
+        self, archives_to_verify: list[VerificationArchive]
+    ) -> list[Any]:
         """Perform verification of archives via IA API."""
         toverify_checksums = [a.file_md5 for a in archives_to_verify]
 
@@ -183,11 +183,11 @@ class VerificationWorker:
         return results
 
     async def _update_verification_results(
-        self, archives_to_verify: List[VerificationArchive], results: List
-    ):
+        self, archives_to_verify: list[VerificationArchive], results: list[Any]
+    ) -> None:
         """Update database with verification results."""
 
-        def _update_db():
+        def _update_db() -> None:
             with db_session:
                 for idx, result in enumerate(results):
                     if isinstance(result, Exception):  # timeout, unverified

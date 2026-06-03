@@ -14,8 +14,10 @@ import threading
 import time
 import types
 import zipfile
+from collections.abc import Callable, Coroutine, Iterator
 from contextlib import closing
-from typing import Coroutine, Iterator, List, Tuple
+from io import TextIOBase
+from typing import Any
 
 import aiofiles
 import aiohttp
@@ -25,7 +27,7 @@ import psutil
 ##
 
 
-def log_error_and_raise(logger: logging.Logger, errormsg: str):
+def log_error_and_raise(logger: logging.Logger, errormsg: str) -> None:
     logger.error(errormsg)
     raise Exception(errormsg)
 
@@ -174,20 +176,25 @@ def rm_dir(dirpath: str) -> None:
 
 
 class TouchAndOpen:
-    def __init__(self, filepath, mode="w", encoding="utf-8"):
+    def __init__(self, filepath: str, mode: str = "w", encoding: str = "utf-8") -> None:
         self.filepath = filepath
         self.mode = mode
         self.encoding = encoding
-        self.file = None
+        self.file: TextIOBase | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> TextIOBase:
         # Ensure all the directories in the filepath exist
         os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
         # Open the file and return the file object
         self.file = open(self.filepath, self.mode, encoding=self.encoding)
         return self.file
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
         # Close the file when exiting
         if self.file:
             self.file.close()
@@ -197,7 +204,7 @@ class TouchAndOpen:
 ##
 
 
-def divide_into_chunks(total_size: int, num_chunks: int) -> List[Tuple]:
+def divide_into_chunks(total_size: int, num_chunks: int) -> list[tuple[int, int]]:
     base = total_size // num_chunks
     reminder = total_size % num_chunks
 
@@ -212,7 +219,9 @@ def divide_into_chunks(total_size: int, num_chunks: int) -> List[Tuple]:
     return res
 
 
-def run_async_blocking(awaitable_func, *args, **kwargs):
+def run_async_blocking(
+    awaitable_func: Callable[..., Coroutine[Any, Any, Any]], *args: Any, **kwargs: Any
+) -> None:
     """
     example:
     atexit.register(partial(run_async_blocking, session.close))
@@ -231,7 +240,12 @@ def run_async_blocking(awaitable_func, *args, **kwargs):
         f.result()
 
 
-async def is_link_alive(url, timeout=10, proxy=None, cookies=None):
+async def is_link_alive(
+    url: str,
+    timeout: int = 10,
+    proxy: str | None = None,
+    cookies: dict[str, str] | None = None,
+) -> bool:
     try:
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=timeout), cookies=cookies
@@ -244,7 +258,7 @@ async def is_link_alive(url, timeout=10, proxy=None, cookies=None):
 
 
 async def async_hash(
-    filepath, hashfunc: callable = hashlib.md5, bufsize=1024**2
+    filepath: str, hashfunc: Callable[[], Any] = hashlib.md5, bufsize: int = 1024**2
 ) -> str:
     hashis = hashfunc()
     async with aiofiles.open(filepath, "rb") as f:
@@ -257,7 +271,7 @@ async def async_hash(
 
 
 async def async_multihash(
-    filepath, hashfuncs: list[callable], bufsize=1024**2
+    filepath: str, hashfuncs: list[Callable[[], Any]], bufsize: int = 1024**2
 ) -> dict[str, str]:
     """
     Compute mulitple hashes at once, more efficient than calling async_hash multiple times.
@@ -274,7 +288,7 @@ async def async_multihash(
     return {i.name: i.hexdigest() for i in hashiss}
 
 
-def sync_multihash(filepath: str, hashfuncs: list[callable]) -> dict[str, str]:
+def sync_multihash(filepath: str, hashfuncs: list[Callable[[], Any]]) -> dict[str, str]:
     """
     Synchronously load the entire file into memory, then compute multiple hashes in parallel,
     one per thread.
@@ -286,7 +300,7 @@ def sync_multihash(filepath: str, hashfuncs: list[callable]) -> dict[str, str]:
     results = {}
     threads = []
 
-    def compute_hash(hashfunc):
+    def compute_hash(hashfunc: Callable[[], Any]) -> None:
         h = hashfunc()
         h.update(data)
         results[h.name] = h.hexdigest()
@@ -301,7 +315,9 @@ def sync_multihash(filepath: str, hashfuncs: list[callable]) -> dict[str, str]:
     return results
 
 
-async def run_with_shutdown(c: Coroutine, e: asyncio.Event) -> any:
+async def run_with_shutdown(
+    c: Coroutine[Any, Any, Any], e: asyncio.Event
+) -> Any | None:
     """
     Return when e is set.
     If e is never set, behaves like that coroutine
@@ -324,13 +340,13 @@ async def run_with_shutdown(c: Coroutine, e: asyncio.Event) -> any:
         return None
 
 
-def run_async_in_thread(coro: Coroutine) -> threading.Thread:
+def run_async_in_thread(coro: Coroutine[Any, Any, Any]) -> threading.Thread:
     """
     Run an async coroutine in a separate thread with its own event loop.
     The thread and event loop shut down automatically when the coroutine is done.
     """
 
-    def thread_entry():
+    def thread_entry() -> None:
         # Create and bind a new event loop to this thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -346,31 +362,31 @@ def run_async_in_thread(coro: Coroutine) -> threading.Thread:
 
 
 class AsyncCounter:
-    def __init__(self):
+    def __init__(self) -> None:
         self.value = 0
         self._lock = asyncio.Lock()
 
-    async def increment(self):
+    async def increment(self) -> int:
         async with self._lock:
             self.value += 1
             return self.value
 
-    async def decrement(self):
+    async def decrement(self) -> int:
         async with self._lock:
             self.value -= 1
             return self.value
 
-    async def set(self, new_val):
+    async def set(self, new_val: int) -> int:
         async with self._lock:
             self.value = new_val
             return self.value
 
-    async def reset(self):
+    async def reset(self) -> int:
         async with self._lock:
             self.value = 0
             return self.value
 
-    def get_value(self):
+    def get_value(self) -> int:
         return self.value
 
 
@@ -435,7 +451,7 @@ def get_memory_usage() -> int:
     return mem_bytes
 
 
-def where_am_i():
+def where_am_i() -> tuple[str, int]:
     frame = inspect.currentframe().f_back
     filename = frame.f_code.co_filename
     line_number = frame.f_lineno
@@ -446,7 +462,7 @@ def where_am_i():
 ##
 
 
-def human_readable_size(num_bytes: int, long=True) -> Tuple[float, str]:
+def human_readable_size(num_bytes: int, long: bool = True) -> tuple[float, str]:
     scale = (
         ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes", "petabytes"]
         if long
@@ -459,7 +475,7 @@ def human_readable_size(num_bytes: int, long=True) -> Tuple[float, str]:
     return num_bytes, scale[0]
 
 
-def human_readable_size_str(num_bytes: int, long=True) -> str:
+def human_readable_size_str(num_bytes: int, long: bool = True) -> str:
     t = human_readable_size(num_bytes, long)
     return f"{t[0]} {t[1]}"
 
@@ -469,7 +485,7 @@ def text_to_html_code_block(text: str) -> str:
     return f"<pre><code>{escaped_text}</code></pre>"
 
 
-def dict_remove_empty_values(data) -> dict:
+def dict_remove_empty_values(data: Any) -> Any:
     """
     Recursively remove keys with empty string values from a nested JSON-like dictionary.
 

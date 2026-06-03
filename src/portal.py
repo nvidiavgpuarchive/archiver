@@ -7,7 +7,7 @@ import os
 import re
 import time
 from functools import partial
-from typing import Dict, List, Optional, TypedDict
+from typing import Any, TypedDict
 
 import aiofiles
 import aiohttp
@@ -38,7 +38,7 @@ class MetaInfo(TypedDict):
     description: str
 
 
-def same_meta(meta1: MetaInfo, meta2: MetaInfo):
+def same_meta(meta1: MetaInfo, meta2: MetaInfo) -> bool:
     return (
         meta1["downloadId"] == meta2["downloadId"]
         or meta1["description"] == meta2["description"]
@@ -65,18 +65,18 @@ class NvidiaWebPortal:
         gmail_client: GmailClient,
         https_proxy: str | None = None,
         remote_playwright_link: str | None = None,
-    ):
+    ) -> None:
         self._https_proxy = https_proxy
         self._username = username
         self._password = password
         self._gmail_client = gmail_client
         self._remote_playwright_link = remote_playwright_link
 
-        self._session: Optional[aiohttp.ClientSession] = None
-        self._userinfo: Optional[Dict] = None
-        self._virtual_groups: Optional[Dict] = None
+        self._session: aiohttp.ClientSession | None = None
+        self._userinfo: dict[str, Any] | None = None
+        self._virtual_groups: dict[str, Any] | None = None
 
-    async def list_meta(self) -> Optional[List[MetaInfo]]:
+    async def list_meta(self) -> list[MetaInfo] | None:
         orgname = self._userinfo["user"]["orgName"]
         vgroup_id = self._virtual_groups["virtualGroups"][0]["id"]
         url = (
@@ -96,7 +96,7 @@ class NvidiaWebPortal:
                 )
                 return None
 
-    async def get_download_url(self, download_id: str) -> Optional[DownloadInfo]:
+    async def get_download_url(self, download_id: str) -> DownloadInfo | None:
         orgname = self._userinfo["user"]["orgName"]
         vgroup_id = self._virtual_groups["virtualGroups"][0]["id"]
         url = (
@@ -126,7 +126,7 @@ class NvidiaWebPortal:
         except:
             return False
 
-    async def _update_userinfo(self):
+    async def _update_userinfo(self) -> None:
         """
         Update userinfo and virtual groups.
         Also serves as a healthcheck, returns True if both fetches succeed.
@@ -156,7 +156,7 @@ class NvidiaWebPortal:
                 f"Update userinfo request failed with status {resp.status}",
             )
 
-    async def login(self, debug=False):
+    async def login(self, debug: bool = False) -> None:
         login_url = "https://nvid.nvidia.com/login"
         _logger.info("Authenticating to Nvidia...")
 
@@ -265,7 +265,7 @@ class NvidiaWebPortal:
 
         _logger.info("Playright quitted.")
 
-    async def _wait_for_verification_link(self, timeout=60) -> str:
+    async def _wait_for_verification_link(self, timeout: int = 60) -> str:
         """
         Wait for verification email, using gmail client
         Returns verification code. Or raise timeout exception.
@@ -309,7 +309,7 @@ class NvidiaWebPortal:
         _logger.error("Timeout waiting for verification email.")
         raise TimeoutError("Timeout waiting for verification email.")
 
-    async def _load_session_from_context(self, context: BrowserContext):
+    async def _load_session_from_context(self, context: BrowserContext) -> None:
         current_page = context.pages[-1]
         page = await context.new_page()
         await page.goto("https://api.licensing.nvidia.com/v1/users/me")
@@ -321,7 +321,7 @@ class NvidiaWebPortal:
 
         await self.load_session_from_cookies()
 
-    async def load_session_from_cookies(self):
+    async def load_session_from_cookies(self) -> None:
         if not os.path.exists(utils.proj_path("config/cookies.json")):
             return
         async with aiofiles.open(utils.proj_path("config/cookies.json"), "r") as f:
@@ -348,7 +348,9 @@ class NvidiaWebPortal:
         return {cookie.key: cookie.value for cookie in self._session.cookie_jar}
 
 
-async def playwright_wait_for_any(page: Page, urls: Dict[str, str], timeout=30):
+async def playwright_wait_for_any(
+    page: Page, urls: dict[str, str], timeout: int = 30
+) -> str:
     """
     Wait for any of the urls to be loaded, return when any of them is loaded.
     Raise timeout if all timeout
@@ -372,7 +374,7 @@ async def playwright_wait_for_any(page: Page, urls: Dict[str, str], timeout=30):
     raise TimeoutError("Timeout, no url matches the criteria.")
 
 
-async def main():
+async def main() -> None:
     config = app_config.load_config()
     gmail_client = GmailClient(
         config.imap.host,
@@ -393,7 +395,9 @@ async def main():
 
     metas = await portal.list_meta()
 
-    async def download_info_worker(taskid, meta: MetaInfo, semaphore):
+    async def download_info_worker(
+        taskid: int, meta: MetaInfo, semaphore: asyncio.Semaphore
+    ) -> DownloadInfo | str:
         async with semaphore:
             _logger.info(f"{taskid} Fetching '{meta["description"]}'")
             for _ in range(3):

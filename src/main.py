@@ -4,6 +4,7 @@ import os
 import signal
 import tempfile
 import traceback
+from collections.abc import Callable
 from datetime import datetime
 
 from pony.orm import select
@@ -21,14 +22,14 @@ _logger = get_logger(__name__)
 
 
 class SignalHandler:
-    def __init__(self, shutdown_ctrl: asyncio.Event, ui_worker: AppTUI):
+    def __init__(self, shutdown_ctrl: asyncio.Event, ui_worker: AppTUI) -> None:
         self._shutdown_ctrl = shutdown_ctrl
         self._ui_worker = ui_worker
 
         self._ctrl_c_counter = 0
         self._logger = get_logger("signal handler")
 
-    def __call__(self, _, frame):
+    def __call__(self, _: int, frame: object) -> None:
         self._ctrl_c_counter += 1
 
         if self._ctrl_c_counter == 1:
@@ -67,7 +68,7 @@ class SignalHandler:
             os._exit(2)
 
 
-async def main():
+async def main() -> None:
     ui_worker = await AppTUI().start()
 
     queue = asyncio.Queue()
@@ -138,11 +139,11 @@ async def main():
 
 async def main_loop(
     config: app_config.AppConfig,
-    portal,
-    queue,
-    is_worker_idle: callable,
+    portal: NvidiaWebPortal,
+    queue: asyncio.Queue,
+    is_worker_idle: Callable[[], bool],
     shutdown: asyncio.Event,
-):
+) -> None:
     """
     Mainloop, add tasks to worker one task at a time
     """
@@ -176,7 +177,7 @@ async def main_loop(
             continue
 
         # get meta tasks
-        def _db_task():
+        def _db_task() -> dict:
             with db_session:
                 # New / never-attempted tasks first.
                 meta = select(
@@ -240,7 +241,7 @@ async def main_loop(
         _logger.info(f"Task '{meta_json["description"]}' queued.")
 
 
-def parse_arguments():
+def parse_arguments() -> argparse.ArgumentParser:
     """
     Parse command-line arguments using rich argparse.
     """

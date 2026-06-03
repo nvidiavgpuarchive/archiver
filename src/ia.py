@@ -5,6 +5,7 @@ import random
 import re
 import tempfile
 import urllib
+from collections.abc import AsyncIterator
 from typing import Any
 from xml.etree import ElementTree
 
@@ -48,17 +49,17 @@ class IAClient:
     All operations in the class is stateless.
     """
 
-    _semaphore_cache = {}
+    _semaphore_cache: dict[str, asyncio.Semaphore] = {}
     global_bytes_uploaded = 0
 
     def __init__(
         self,
         access_key: str,
         secret_key: str,
-        https_proxy=None,
+        https_proxy: str | None = None,
         # not larger than 256MB, adjust according to filesize
-        multipart_chunksize=1024**2 * 16,
-    ):
+        multipart_chunksize: int = 1024**2 * 16,
+    ) -> None:
         self._access_key = access_key
         self._secret_key = secret_key
         self._proxy = https_proxy
@@ -111,13 +112,15 @@ class IAClient:
         meta_title: str,
         meta_description: str,
         meta_collection: str,  # test_collection if to be deleted in 30 days
-        custom_metadata: dict = {},  # metadata otherthan those required as params
+        custom_metadata: dict[
+            str, Any
+        ] = {},  # metadata otherthan those required as params
         # custom metadata cannot contain _, use - instead
-        option_keep_old_version=False,
-        option_delete_derived_files=True,
-        option_skip_derive_process=False,
-        multipart=False,
-    ):
+        option_keep_old_version: bool = False,
+        option_delete_derived_files: bool = True,
+        option_skip_derive_process: bool = False,
+        multipart: bool = False,
+    ) -> None:
         # metadata and headers
         accepte_mediatypes = [
             "texts",
@@ -218,7 +221,7 @@ class IAClient:
     # delete bucket not allowed, but we can delete
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(3))
-    async def delete_file(self, bucket: str, filename: str):
+    async def delete_file(self, bucket: str, filename: str) -> None:
         url = f"https://s3.us.archive.org/{bucket}/{filename}"
         async with aiohttp.ClientSession() as session:
             async with session.delete(
@@ -230,7 +233,9 @@ class IAClient:
                 return
 
     @staticmethod
-    async def _file_chunker(path, chunk_size=1024**2, start=0, end=None):
+    async def _file_chunker(
+        path: str, chunk_size: int = 1024**2, start: int = 0, end: int | None = None
+    ) -> AsyncIterator[bytes]:
         async with aiofiles.open(path, "rb") as af:
             await af.seek(start)
             pos = start
@@ -255,7 +260,7 @@ class IAClient:
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(3))
     async def _multipart_init(
         self, bucket: str, filepath: str, headers: dict[str, Any]
-    ):
+    ) -> str:
         filename = os.path.basename(filepath)
         url = f"https://s3.us.archive.org/{bucket}/{filename}?uploads"
         if not headers:
@@ -284,7 +289,7 @@ class IAClient:
         part_number: int,
         start: int,
         end: int,  # [start, end)
-    ):
+    ) -> str | None:
         filename = os.path.basename(filepath)
         for _ in range(20):
             try:
@@ -322,8 +327,8 @@ class IAClient:
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(3))
     async def _multipart_complete(
-        self, bucket: str, filepath: str, upload_id: str, parts: dict[str, Any]
-    ):
+        self, bucket: str, filepath: str, upload_id: str, parts: list[dict[str, Any]]
+    ) -> str:
         filename = os.path.basename(filepath)
         url = f"https://s3.us.archive.org/{bucket}/{filename}?uploadId={upload_id}"
         xml = "<CompleteMultipartUpload>"
@@ -350,7 +355,7 @@ class IAClient:
                     return text
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(3))
-    async def multipart_abort(self, bucket, filename, upload_id):
+    async def multipart_abort(self, bucket: str, filename: str, upload_id: str) -> str:
         url = f"https://s3.us.archive.org/{bucket}/{filename}?uploadId={upload_id}"
         async with aiohttp.ClientSession() as session:
             async with self._connection_semaphore:
@@ -368,9 +373,9 @@ class IAClient:
         self,
         bucket: str,
         filepath: str,
-        headers: dict[str, Any] = None,
-        chunk_size=1024**2 * 8,
-    ):
+        headers: dict[str, Any] | None = None,
+        chunk_size: int = 1024**2 * 8,
+    ) -> None:
         filename = os.path.basename(filepath)
 
         upload_id = await self._multipart_init(bucket, filepath, headers)
@@ -434,7 +439,7 @@ class IAClient:
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(3))
     async def upload_file(
         self, bucket: str, filepath: str, headers: dict[str, Any] | None = None
-    ):
+    ) -> None:
         """
         Upload file to an exsiting bucket, or create a bucket then upload, depending on the headers
         """
@@ -461,7 +466,12 @@ class IAClient:
         return
 
     async def download_file(
-        self, bucket: str, filename: str, output_dir: str, fast_get=False, attempts=3
+        self,
+        bucket: str,
+        filename: str,
+        output_dir: str,
+        fast_get: bool = False,
+        attempts: int = 3,
     ) -> str | None:
         """
         if fast_get is set to true, use ia web instead of s3. Maybe faster?
@@ -511,7 +521,7 @@ class IAClient:
                 return True
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(3))
-    async def check_limits(self, bucket: str) -> dict | None:
+    async def check_limits(self, bucket: str) -> dict[str, Any] | None:
         """
         Check limits does not need bucket to be pre-existing.
         What matters:
@@ -534,10 +544,10 @@ class IAClient:
     async def verify_bucket(
         self,
         bucket: str,
-        filepaths: list[str] = None,
-        md5_dict: dict[str, str] = None,
-        timeout=180,
-    ) -> tuple[list[str], dict]:
+        filepaths: list[str] | None = None,
+        md5_dict: dict[str, str] | None = None,
+        timeout: int = 180,
+    ) -> tuple[list[str], dict[str, Any]]:
         """
         Returns bad_filelist, metainfo
 
@@ -599,17 +609,22 @@ class IAClient:
             _logger.debug(msg)
             raise Exception(msg)
 
-    async def close(self):
+    async def close(self) -> None:
         pass
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "IAClient":
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object,
+    ) -> None:
         await self.close()
 
     @staticmethod
-    async def generate_placeholder():
+    async def generate_placeholder() -> str:
         """
         The code logic requires a placeholder to be uploaded in order to
         create the bucket and init the whole upload procedure.
@@ -635,7 +650,7 @@ class IAClient:
         return tmp_path
 
 
-async def main():
+async def main() -> None:
     # 1. Generate a 1GB dummy file
     dummy_path = "/tmp/dummy.zip"
 

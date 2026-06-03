@@ -2,7 +2,7 @@
 import asyncio
 import threading
 import time
-from typing import Optional
+from collections.abc import Callable
 
 from pony.orm import db_session
 from rich.live import Live
@@ -19,7 +19,13 @@ from logger import get_logger
 
 
 class CounterColumn(ProgressColumn):
-    def __init__(self, get_value, label, color, bytes_conv=False):
+    def __init__(
+        self,
+        get_value: Callable[[], int],
+        label: str,
+        color: str,
+        bytes_conv: bool = False,
+    ) -> None:
         super().__init__()
         self.get_value = get_value  # a callable that returns the current count
         self.label = label
@@ -34,7 +40,7 @@ class CounterColumn(ProgressColumn):
 
 
 class VarTextColumn(ProgressColumn):
-    def __init__(self, init_text, color):
+    def __init__(self, init_text: str, color: str) -> None:
         super().__init__()
         self.text = init_text
         self.color = color
@@ -42,13 +48,13 @@ class VarTextColumn(ProgressColumn):
     def render(self, task: Task) -> Text:
         return Text(self.text, style=self.color)
 
-    def update(self, text, color):
+    def update(self, text: str, color: str) -> None:
         self.text = text
         self.color = color
 
 
 class SpeedColumnBase(ProgressColumn):
-    def __init__(self, get_value, icon, color):
+    def __init__(self, get_value: Callable[[], int], icon: str, color: str) -> None:
         super().__init__()
         self.get_value = get_value  # callable that returns current total bytes
         self.icon = icon
@@ -81,7 +87,7 @@ class SpeedColumnBase(ProgressColumn):
 
 
 class AppTUI:
-    def __init__(self):
+    def __init__(self) -> None:
         self.complete_counter = utils.AsyncCounter()
         self.incomplete_counter = utils.AsyncCounter()
         self.not_verified_counter = utils.AsyncCounter()
@@ -101,8 +107,8 @@ class AppTUI:
         )
 
         self._logger = get_logger("ui worker")
-        self._shutdown: Optional[asyncio.Event] = None
-        self._thread: Optional[threading.Thread] = None
+        self._shutdown: asyncio.Event | None = None
+        self._thread: threading.Thread | None = None
 
     ## Init UI Elements
     ##
@@ -157,7 +163,7 @@ class AppTUI:
             mem_column,
         )
 
-    def _live_display_render(self):
+    def _live_display_render(self) -> Table:
         table = Table.grid(padding=(0, 1))
         # Add a separator row at the top (using dashes, adjust width as needed)
         separator = Text("")
@@ -169,7 +175,7 @@ class AppTUI:
     ## Lifetime Control
     ##
 
-    async def start(self):
+    async def start(self) -> "AppTUI":
         self._live_display.start()
 
         self._shutdown = asyncio.Event()
@@ -177,7 +183,7 @@ class AppTUI:
         self._logger.info("UI Worker started.")
         return self
 
-    async def stop(self):
+    async def stop(self) -> None:
         if self._thread and self._thread.is_alive():
             self._shutdown.set()
             await asyncio.to_thread(self._thread.join)
@@ -191,7 +197,7 @@ class AppTUI:
     ##
 
     # this worker must be run in an seperate thread
-    async def _run(self):
+    async def _run(self) -> None:
         progress_bar_started = False
         while not self._shutdown.is_set():
             await asyncio.sleep(1)
@@ -218,5 +224,5 @@ class AppTUI:
                 completed=states_cnt[VerificationState.COMPLETE],
             )
 
-    def update_progress_bar_text_column(self, new_text: str, new_color: str):
+    def update_progress_bar_text_column(self, new_text: str, new_color: str) -> None:
         self._indicator_column.update(new_text, new_color)

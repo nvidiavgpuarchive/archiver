@@ -1,7 +1,7 @@
 import asyncio
 import email
 from email.header import decode_header
-from typing import List, Tuple
+from typing import TypedDict
 
 import aioimaplib
 
@@ -12,6 +12,16 @@ from logger import get_logger
 _logger = get_logger(__name__)
 
 
+class MailData(TypedDict):
+    eid: str
+    mailbox: str
+    subject: str
+    sender: str
+    recipients: list[str]
+    time: float
+    body: str
+
+
 class GmailClient:
     """
     IMAPClient to fetch list of emails and read them, for verification codes
@@ -19,7 +29,7 @@ class GmailClient:
     due to the limitations of imap protocals
     """
 
-    def __init__(self, host, port, username, password):
+    def __init__(self, host: str, port: int, username: str, password: str) -> None:
         self._host = host
         self._port = port
         self._username = username
@@ -31,7 +41,7 @@ class GmailClient:
         self._junkbox_name = None
         self._trashbox_name = None
 
-    async def connect(self):
+    async def connect(self) -> None:
         """
         If not connected, connect and login to gmail server.
         It's not a must to call this function explicitly, all other methods
@@ -74,14 +84,16 @@ class GmailClient:
 
         _logger.info(f"Logged in to IMAP server '{self._host}:{self._port}'")
 
-    async def _is_connected(self):
+    async def _is_connected(self) -> bool:
         try:
             await self._imap_client.select("inbox")
             return True
         except Exception as e:
             return False
 
-    async def search_for(self, sender: str, unseen=True) -> List[Tuple[str, str]]:
+    async def search_for(
+        self, sender: str, unseen: bool = True
+    ) -> list[tuple[str, bytes]]:
         await self.connect()
 
         result = []
@@ -92,7 +104,7 @@ class GmailClient:
             result += [(mailbox, eid) for eid in data[0].split()]
         return result
 
-    async def delete_mail(self, eid: str, mailbox="INBOX"):
+    async def delete_mail(self, eid: str | bytes, mailbox: str = "INBOX") -> None:
         await self.connect()
         await self._imap_client.select(mailbox)
         await self._imap_client.copy(eid, self._trashbox_name)
@@ -100,7 +112,7 @@ class GmailClient:
         await self._imap_client.expunge()
         _logger.info(f"Email {eid} trashed from {mailbox}.")
 
-    async def get_mail(self, eid, mailbox="INBOX"):
+    async def get_mail(self, eid: str | bytes, mailbox: str = "INBOX") -> MailData:
         """
         Fetch a single email by eid and return its relevant information.
         """
@@ -176,7 +188,7 @@ class GmailClient:
 # test email out
 if __name__ == "__main__":
 
-    async def main():
+    async def main() -> None:
         config = app_config.load_config()
         gmail_client = GmailClient(
             config.imap.host,

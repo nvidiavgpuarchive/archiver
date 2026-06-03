@@ -4,7 +4,9 @@ import os
 import tempfile
 import threading
 import time
+from collections.abc import Iterator
 from http.cookies import SimpleCookie
+from io import BufferedIOBase
 
 import pytest
 from ranged_handler import RangeRequestHandler
@@ -25,7 +27,7 @@ class CookieRequiredMixin:
     REQUIRED_COOKIE_NAME = "test_session"
     REQUIRED_COOKIE_VALUE = "letmein"
 
-    def send_head(self):
+    def send_head(self) -> BufferedIOBase | None:
         cookie = SimpleCookie(self.headers.get("Cookie", ""))
         if (
             self.REQUIRED_COOKIE_NAME not in cookie
@@ -47,12 +49,12 @@ class CookieRequiredSimpleHandler(
 
 
 def run_http_server(
-    directory,
-    port,
+    directory: str,
+    port: int,
     stop_event: threading.Event,
-    ranged_support=True,
-    require_cookie=False,
-):
+    ranged_support: bool = True,
+    require_cookie: bool = False,
+) -> None:
     os.chdir(directory)
     if require_cookie:
         handler = (
@@ -74,7 +76,9 @@ def run_http_server(
     thread.join()
 
 
-def start_server(tempdir, ranged_support=True, require_cookie=False):
+def start_server(
+    tempdir: str, ranged_support: bool = True, require_cookie: bool = False
+) -> tuple[int, threading.Event, threading.Thread]:
     stop_event = threading.Event()
     port = utils.find_free_port()
     server_thread = threading.Thread(
@@ -87,7 +91,7 @@ def start_server(tempdir, ranged_support=True, require_cookie=False):
 
 
 @pytest.fixture(scope="module", params=FILE_SIZES, ids=[name for name, _ in FILE_SIZES])
-def testfile(request):
+def testfile(request: pytest.FixtureRequest) -> Iterator[tuple[str, str]]:
     size_name, size_bytes = request.param
     with tempfile.TemporaryDirectory() as tempdir:
         file_path = os.path.join(tempdir, "testfile.bin")
@@ -97,7 +101,9 @@ def testfile(request):
         yield tempdir, file_path
 
 
-async def run_test(url, source_file, cookies=None):
+async def run_test(
+    url: str, source_file: str, cookies: dict[str, str] | None = None
+) -> None:
     with tempfile.TemporaryDirectory() as output_dir:
         downloader = AsyncChunkDownloader(
             url, output_dir, num_chunks=8, cookies=cookies
@@ -116,7 +122,7 @@ async def run_test(url, source_file, cookies=None):
 
 
 @pytest.mark.asyncio
-async def test_chunked_downloader_with_range(testfile):
+async def test_chunked_downloader_with_range(testfile: tuple[str, str]) -> None:
     tempdir, source_file = testfile
     port, stop_event, server_thread = start_server(tempdir, ranged_support=True)
     url = f"http://localhost:{port}/testfile.bin"
@@ -129,7 +135,7 @@ async def test_chunked_downloader_with_range(testfile):
 
 
 @pytest.mark.asyncio
-async def test_chunked_downloader_without_range(testfile):
+async def test_chunked_downloader_without_range(testfile: tuple[str, str]) -> None:
     tempdir, source_file = testfile
     port, stop_event, server_thread = start_server(tempdir, ranged_support=False)
     url = f"http://localhost:{port}/testfile.bin"
@@ -143,7 +149,7 @@ async def test_chunked_downloader_without_range(testfile):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ranged_support", [True, False])
-async def test_downloader_sends_cookies(ranged_support):
+async def test_downloader_sends_cookies(ranged_support: bool) -> None:
     cookies = {
         CookieRequiredMixin.REQUIRED_COOKIE_NAME: (
             CookieRequiredMixin.REQUIRED_COOKIE_VALUE
@@ -168,7 +174,7 @@ async def test_downloader_sends_cookies(ranged_support):
 
 
 @pytest.mark.asyncio
-async def test_chunked_downloader_sends_cookies():
+async def test_chunked_downloader_sends_cookies() -> None:
     cookies = {
         CookieRequiredMixin.REQUIRED_COOKIE_NAME: (
             CookieRequiredMixin.REQUIRED_COOKIE_VALUE

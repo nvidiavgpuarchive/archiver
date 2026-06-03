@@ -5,7 +5,7 @@ import json
 import os
 from datetime import date, datetime
 from enum import Enum
-from typing import Union
+from typing import Any
 
 from pony.orm import *
 
@@ -47,7 +47,7 @@ class DriverMeta(db.Entity):
     archive = Optional("ArchiveEntry", reverse="meta")
 
     @staticmethod
-    def from_json(meta_info: dict):
+    def from_json(meta_info: dict[str, Any]) -> "DriverMeta":
         fields = class_to_fields(DriverMeta, ["id", "archive"])
         meta_info = {k: meta_info.get(k, None) for k in fields}
         meta_info["releaseDate"] = (
@@ -58,7 +58,7 @@ class DriverMeta(db.Entity):
         meta_info = utils.dict_remove_empty_values(meta_info)
         return DriverMeta(**meta_info)
 
-    def to_json(self, include_id=False):
+    def to_json(self, include_id: bool = False) -> dict[str, Any]:
         exclusion = ["archive"]
         if not include_id:
             exclusion += ["id"]
@@ -94,20 +94,20 @@ class FileChecksum(db.Entity):
     extra = Optional(Json)
 
     @staticmethod
-    def from_hash_dict(filepath, hash_dict: dict):
+    def from_hash_dict(filepath: str, hash_dict: dict[str, str]) -> "FileChecksum":
         return FileChecksum(
             filenames=[os.path.basename(filepath)],
             size=os.path.getsize(filepath),
             **hash_dict,
         )
 
-    def to_json(self, include_id=False):
+    def to_json(self, include_id: bool = False) -> dict[str, Any]:
         fields = class_to_fields(FileChecksum, ["id", "archives"])
         data = {k: getattr(self, k) for k in fields if getattr(self, k)}
         return data if not include_id else {**data, "id": self.id}
 
     @staticmethod
-    def from_json(json_data: dict):
+    def from_json(json_data: dict[str, Any]) -> "FileChecksum":
         """
         Creates an instance of FileChecksum from the provided JSON data.
         Constructs key-value pairs for all fields, filling missing values with None.
@@ -138,7 +138,7 @@ class ArchiveEntry(db.Entity):
     lastAttemptAt = Optional(datetime)
     extra = Optional(Json)
 
-    def to_json(self, expand=False):
+    def to_json(self, expand: bool = False) -> dict[str, Any]:
         return {
             "identifier": self.identifier,
             "ia_meta": self.ia_meta,
@@ -154,7 +154,7 @@ db.bind(provider="sqlite", filename=utils.proj_path("config/db.sqlite"), create_
 db.generate_mapping(create_tables=True)
 
 
-def class_to_fields(cls, excludes: list[str]) -> list[str]:
+def class_to_fields(cls: type, excludes: list[str]) -> list[str]:
     return [
         k
         for k, v in cls.__dict__.items()
@@ -163,7 +163,7 @@ def class_to_fields(cls, excludes: list[str]) -> list[str]:
 
 
 @db_session
-def sync_meta_to_db(meta_list: list[dict]):
+def sync_meta_to_db(meta_list: list[dict[str, Any]]) -> None:
     existing_ids = select(m.downloadId for m in DriverMeta)[:]
     updated_cnt = 0
     for meta in meta_list:
@@ -183,7 +183,7 @@ def sync_meta_to_db(meta_list: list[dict]):
 
 
 @db_session
-def mark_all_pending_incomplete():
+def mark_all_pending_incomplete() -> None:
     pending_ars = select(
         ar for ar in ArchiveEntry if ar.verificationState == VerificationState.PENDING
     )[:]
@@ -194,7 +194,7 @@ def mark_all_pending_incomplete():
 
 
 @db_session
-def get_states_count():
+def get_states_count() -> dict[VerificationState, int]:
     return {
         s: count(a for a in ArchiveEntry if a.verificationState == s)
         for s in VerificationState
@@ -202,12 +202,12 @@ def get_states_count():
 
 
 @db_session
-def get_meta_count():
+def get_meta_count() -> int:
     return DriverMeta.select().count()
 
 
 @db_session
-def dump_completed_to_json() -> dict[str, Union["JinjaEntry", dict]]:
+def dump_completed_to_json() -> dict[str, dict[str, Any]]:
     if (
         not DriverMeta.select().count()
         or not FileChecksum.select().count()
@@ -224,7 +224,7 @@ def dump_completed_to_json() -> dict[str, Union["JinjaEntry", dict]]:
 
 
 @db_session
-def load_from_json(json_filepath: str):
+def load_from_json(json_filepath: str) -> None:
     if (
         DriverMeta.select().count()
         or FileChecksum.select().count()
@@ -252,7 +252,7 @@ def load_from_json(json_filepath: str):
     _logger.info(f"Loaded {len(json_data)} entries from json.")
 
 
-async def __debug_remove_404_entires():
+async def __debug_remove_404_entires() -> None:
     """
     Removes entries and associated files from db if head bucket returns 404
     :return:
@@ -283,7 +283,7 @@ async def __debug_remove_404_entires():
                     print(f"Won't delete {bucket}")
 
 
-async def main():
+async def main() -> None:
     pass
 
 

@@ -8,7 +8,7 @@ import string
 import traceback
 from datetime import datetime
 from enum import Enum
-from typing import Optional, TypedDict
+from typing import TypedDict
 
 from pony.orm import db_session
 
@@ -34,15 +34,15 @@ class QueueItem(TypedDict):
 
 class Worker:
 
-    def __init__(self, worker_id: int, queue: asyncio.Queue):
+    def __init__(self, worker_id: int, queue: asyncio.Queue) -> None:
         self._worker_id = worker_id
         self._queue = queue
 
         self._config = app_config.load_config()
         self._logger = get_logger(f"worker {worker_id}")
         self._state = WorkerState.IDLE
-        self._task: Optional[asyncio.Task] = None
-        self._shutdown: Optional[asyncio.Event] = None
+        self._task: asyncio.Task | None = None
+        self._shutdown: asyncio.Event | None = None
 
     # Lifetime Control
     ##
@@ -55,12 +55,12 @@ class Worker:
         self._shutdown = asyncio.Event()  # worker manages its own shutdown event
         return self
 
-    async def stop(self):
+    async def stop(self) -> None:
         if self._task and not self._task.done():
             self._shutdown.set()
             await self._task
 
-    async def _run(self):
+    async def _run(self) -> None:
         """Main worker loop."""
         self._logger.info(f"Worker {self._worker_id} started.")
 
@@ -334,8 +334,8 @@ class Worker:
         return True
 
     async def _cleanup_files(
-        self, filepath_list: list[str], working_dir: Optional[str]
-    ):
+        self, filepath_list: list[str], working_dir: str | None
+    ) -> None:
         """Clean up downloaded files and working directory."""
         if filepath_list:
             await asyncio.to_thread(utils.remove_files, filepath_list)
@@ -345,7 +345,7 @@ class Worker:
     # DB Tools
     ##
 
-    async def _create_pending_archive_entry(self, task: QueueItem) -> Optional[str]:
+    async def _create_pending_archive_entry(self, task: QueueItem) -> str | None:
         """
         Create archive entry with PENDING state and return unique identifier.
         If entry exists (matching meta), change state to PENDING and return identifier
@@ -364,7 +364,7 @@ class Worker:
         identifier = f"{self._config.ia.bucket_prefix}{
             filename}_{random_suffix}"
 
-        def _create_archive():
+        def _create_archive() -> str:
             with db_session():
                 meta = DriverMeta.get(downloadId=task["meta"]["downloadId"])
                 if not meta:
@@ -403,10 +403,10 @@ class Worker:
         identifier: str,
         main_filepath: str,
         main_checksum_d: dict[str, str],
-    ):
+    ) -> None:
         """Update archive entry to complete with file checksums."""
 
-        def _db_update():
+        def _db_update() -> None:
             with db_session():
                 # Get or create file checksum entry
                 file_entry = FileChecksum.get(md5=main_checksum_d["md5"])
@@ -433,10 +433,10 @@ class Worker:
         await asyncio.to_thread(_db_update)
         self._logger.info(f"ArchiveEntry '{identifier}' updated in db.")
 
-    async def _mark_archive_incomplete(self, identifier: str):
+    async def _mark_archive_incomplete(self, identifier: str) -> None:
         """Mark archive entry as incomplete on failure."""
 
-        def _db_update():
+        def _db_update() -> None:
             with db_session():
                 archive_entry = ArchiveEntry.get(identifier=identifier)
                 if archive_entry:
@@ -448,7 +448,7 @@ class Worker:
     # Other Tools
     ##
 
-    def _extract_filename(self, url: str) -> Optional[str]:
+    def _extract_filename(self, url: str) -> str | None:
         """Extract filename from URL."""
         match = re.search(r"/([^/?#]+?)(?:\?.*)?$", url)
         if not match:
