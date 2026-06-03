@@ -131,7 +131,6 @@ class ArchiveEntry(db.Entity):
 
     verificationState = Required(str, default=VerificationState.NOT_VERIFIED)
     lastAttemptAt = Optional(datetime)
-    extra = Optional(Json)  # dict[str, Any] | None
 
     def to_json(self, expand: bool = False) -> dict[str, Any]:
         return {
@@ -139,7 +138,6 @@ class ArchiveEntry(db.Entity):
             "ia_meta": self.ia_meta,
             "meta": self.meta if not expand else self.meta.to_json(),
             "file": self.file if not expand else self.file.to_json(),
-            "extra": self.extra,
         }
 
 
@@ -239,7 +237,6 @@ def load_from_json(json_filepath: str) -> None:
             meta=meta,
             file=file,
             ia_meta=v["ia_meta"],
-            extra=v.get("extra"),
             verificationState=VerificationState.COMPLETE,
         )
         commit()

@@ -21,7 +21,7 @@ class AwsS3:
 
     def __init__(self) -> None:
         config = app_config.load_config().aws_s3
-        self._entries: list[dict[str, Any]] = []
+        self._entries: list[tuple[str, dict[str, Any]]] = []
         self._meta: list[MetaInfo] = []
         self._entries_by_etag: dict[str, dict[str, Any]] = {}
 
@@ -33,6 +33,7 @@ class AwsS3:
             config.windows_json_path,
             platform_name="Windows",
         )
+        self._finalize_entries()
         _logger.info(f"Loaded {len(self._meta)} AWS S3 gaming driver entries.")
 
     async def list_meta(self) -> list[MetaInfo]:
@@ -66,9 +67,26 @@ class AwsS3:
             if not key or key.endswith("/"):
                 continue
 
+            self._entries.append((platform_name, entry))
+
+    def _finalize_entries(self) -> None:
+        self._entries.sort(
+            key=lambda item: (
+                self._etag(item[1]),
+                self._filename(item[1].get("Key", "")),
+                item[0],
+                item[1].get("Key", ""),
+            )
+        )
+        for platform_name, entry in self._entries:
             etag = self._etag(entry)
-            self._entries.append(entry)
-            self._entries_by_etag.setdefault(etag, entry)
+            if etag in self._entries_by_etag:
+                _logger.warning(
+                    f"Skipping duplicate AWS S3 ETag '{etag}' for '{entry['Key']}'."
+                )
+                continue
+
+            self._entries_by_etag[etag] = entry
             self._meta.append(self._to_meta(entry, etag, platform_name))
 
     @staticmethod
