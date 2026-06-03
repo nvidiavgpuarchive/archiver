@@ -8,28 +8,22 @@ import string
 import traceback
 from datetime import datetime
 from enum import Enum
-from typing import TypedDict
 
 from pony.orm import db_session
 
 import app_config
 import utils
 from db import ArchiveEntry, DriverMeta, FileChecksum, VerificationState
+from domain import QueueItem
 from downloader import AsyncChunkDownloader
 from ia import IAClient
 from logger import get_logger
-from portal import DownloadInfo, MetaInfo
 
 
 class WorkerState(Enum):
     IDLE = "idle"
     RUNNING = "running"
     DEAD = "dead"
-
-
-class QueueItem(TypedDict):
-    meta: MetaInfo
-    download: DownloadInfo
 
 
 class Worker:

@@ -7,7 +7,7 @@ import os
 import re
 import time
 from functools import partial
-from typing import Any, TypedDict
+from typing import Any
 
 import aiofiles
 import aiohttp
@@ -16,40 +16,11 @@ from yarl import URL
 
 import app_config
 import utils
+from domain import DownloadInfo, MetaInfo
 from gmail_client import GmailClient
 from logger import get_logger
 
 _logger = get_logger(__name__)
-
-
-class MetaInfo(TypedDict):
-    linkType: str
-    category: str
-    downloadType: str
-    downloadId: str  # unique
-    name: str
-    productName: str
-    releaseDate: str
-    version: str
-    platformVersion: str
-    productFamilies: list[str]
-    platformName: str
-    checksumFormat: str
-    description: str
-
-
-def same_meta(meta1: MetaInfo, meta2: MetaInfo) -> bool:
-    return (
-        meta1["downloadId"] == meta2["downloadId"]
-        or meta1["description"] == meta2["description"]
-    )
-
-
-class DownloadInfo(TypedDict):
-    id: str
-    url: str
-    checksumUrl: str
-    cookies: dict[str, str]
 
 
 class NvidiaWebPortal:
@@ -88,7 +59,7 @@ class NvidiaWebPortal:
         async with self._session.post(url, json=data, proxy=self._https_proxy) as resp:
             if resp.status == 200:
                 json_data = await resp.json()
-                return json_data["downloads"]
+                return [download | {"extra": {}} for download in json_data["downloads"]]
             else:
                 utils.log_error_and_raise(
                     _logger,
@@ -159,6 +130,12 @@ class NvidiaWebPortal:
     async def login(self, debug: bool = False) -> None:
         login_url = "https://nvid.nvidia.com/login"
         _logger.info("Authenticating to Nvidia...")
+
+        if not self._session:
+            await self._load_session_from_cookies()
+        if await self.is_loggedin():
+            _logger.info("Loaded existing Nvidia session from cookies.")
+            return
 
         if self._https_proxy and (
             (
@@ -319,9 +296,9 @@ class NvidiaWebPortal:
         async with aiofiles.open(utils.proj_path("config/cookies.json"), "w") as f:
             await f.write(json.dumps(playwright_cookies))
 
-        await self.load_session_from_cookies()
+        await self._load_session_from_cookies()
 
-    async def load_session_from_cookies(self) -> None:
+    async def _load_session_from_cookies(self) -> None:
         if not os.path.exists(utils.proj_path("config/cookies.json")):
             return
         async with aiofiles.open(utils.proj_path("config/cookies.json"), "r") as f:
@@ -384,8 +361,8 @@ async def main() -> None:
     )
 
     portal = NvidiaWebPortal(
-        username=config.portal.nvidia_username,
-        password=config.portal.nvidia_password,
+        username=config.nvidia_portal.nvidia_username,
+        password=config.nvidia_portal.nvidia_password,
         https_proxy=config.global_.https_proxy,
         gmail_client=gmail_client,
     )

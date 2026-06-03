@@ -42,6 +42,7 @@ class DriverMeta(db.Entity):
     category = Optional(str)
     checksumFormat = Optional(str)
     productFamilies = Optional(Json)  # JSON field in Pony ORM
+    extra = Optional(Json)  # dict[str, Any] | None
 
     # Relationships
     archive = Optional("ArchiveEntry", reverse="meta")
@@ -91,7 +92,7 @@ class FileChecksum(db.Entity):
     filenames = Required(Json)
     archives = Set("ArchiveEntry", reverse="file")
 
-    extra = Optional(Json)
+    extra = Optional(Json)  # dict[str, Any] | None
 
     @staticmethod
     def from_hash_dict(filepath: str, hash_dict: dict[str, str]) -> "FileChecksum":
@@ -114,12 +115,6 @@ class FileChecksum(db.Entity):
         """
         fields = class_to_fields(FileChecksum, ["id", "archives"])
         data = {k: json_data.get(k, "") for k in fields}
-        for k in ["extra"]:  # migration
-            if isinstance(data.get(k), str):
-                if data[k]:
-                    data[k] = json.loads(data[k])
-                else:
-                    data.pop(k)
 
         return FileChecksum(**data)
 
@@ -136,7 +131,7 @@ class ArchiveEntry(db.Entity):
 
     verificationState = Required(str, default=VerificationState.NOT_VERIFIED)
     lastAttemptAt = Optional(datetime)
-    extra = Optional(Json)
+    extra = Optional(Json)  # dict[str, Any] | None
 
     def to_json(self, expand: bool = False) -> dict[str, Any]:
         return {

@@ -11,24 +11,14 @@
 </div>
 
 > [!NOTE]
-> Currently, we only have this GitHub repository and a related Internet Archive account. We do not plan to open any other social media accounts, such as Discord or Telegram, as we welcome open and upfront discussions.
->
-> If you have found an issue with drivers or wish to request new drivers, kindly raise an issue.
+> Try our new react webapp for a better browsing experience.  
+> → [Enter Web Search](https://nvidiavgpuarchive.github.io) ←
 
-
-The **vGPU Archive Index** is an open catalog of NVIDIA vGPU drivers. All drivers in the index are available for download, either directly over HTTP or through torrents. The goal is to make older and newer drivers easily accessible for anyone who needs them.  
-
-The index is updated periodically via an automated script, all drivers are uploaded as is and complete with checksums.   
-
-
-### Repository Overview
-
-- **Index**: See below. You may use the index to narrow down and locate what you are looking for in <5 clicks.
-- **Search**: Type `/` to search in the whole repo, title, filename or md5.
-- **dump.json**: A JSON file that fully describes this repo so you can access the information programmatically.
-- **Driver Catalogue**: Located in the "Non-Drivers / Misc" section, provides devices id and driver compatibility information.
+The **vGPU Archive Index** is an open catalog of NVIDIA vGPU drivers. All drivers in the index are available for download, either directly over HTTP or through torrents. The goal is to make older and newer drivers easily accessible for anyone who needs them.   
+The index is updated periodically via an automated script, all drivers are uploaded as is and complete with checksums.  
 
 Downloading via **torrents** is highly recommended. Internet archive seeds the content automatically, so you'll get the normal http bandwidth + p2p bandwidth.
+If you have found an issue with drivers or wish to request new drivers, kindly raise an issue.  
 
 ## Index
 

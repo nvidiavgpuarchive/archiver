@@ -11,12 +11,13 @@ from pony.orm import select
 from rich_argparse import RichHelpFormatter
 
 import app_config
+from aws_s3 import AwsS3
 from db import ArchiveEntry, DriverMeta, sync_meta_to_db
 from gmail_client import GmailClient
 from main_tui import *
 from main_verification import VerificationWorker
 from main_worker import Worker
-from portal import NvidiaWebPortal
+from nvidia_portal import NvidiaWebPortal
 
 _logger = get_logger(__name__)
 
@@ -68,7 +69,7 @@ class SignalHandler:
             os._exit(2)
 
 
-async def main() -> None:
+async def main(source: str) -> None:
     ui_worker = await AppTUI().start()
 
     queue = asyncio.Queue()
@@ -97,22 +98,27 @@ async def main() -> None:
     verification = await VerificationWorker().start()
 
     # main routine
-    gmail_client = GmailClient(
-        config.imap.host,
-        config.imap.port,
-        config.imap.username,
-        config.imap.password,
-    )
-    portal = NvidiaWebPortal(
-        username=config.portal.nvidia_username,
-        password=config.portal.nvidia_password,
-        https_proxy=config.global_.https_proxy,
-        gmail_client=gmail_client,
-    )
-    asyncio.create_task(gmail_client.connect())
+    if source == "nvidia":
+        gmail_client = GmailClient(
+            config.imap.host,
+            config.imap.port,
+            config.imap.username,
+            config.imap.password,
+        )
+        portal = NvidiaWebPortal(
+            username=config.nvidia_portal.nvidia_username,
+            password=config.nvidia_portal.nvidia_password,
+            https_proxy=config.global_.https_proxy,
+            gmail_client=gmail_client,
+        )
+        asyncio.create_task(gmail_client.connect())
+    elif source == "aws":
+        portal = AwsS3()
+        sync_meta_to_db(await portal.list_meta())
+    else:
+        raise ValueError(f"Unknown sync source: {source}")
 
     try:
-        await portal.load_session_from_cookies()
         await ui_worker.start()
         await main_loop(
             config=config,
@@ -139,7 +145,7 @@ async def main() -> None:
 
 async def main_loop(
     config: app_config.AppConfig,
-    portal: NvidiaWebPortal,
+    portal: NvidiaWebPortal | AwsS3,
     queue: asyncio.Queue,
     is_worker_idle: Callable[[], bool],
     shutdown: asyncio.Event,
@@ -177,34 +183,52 @@ async def main_loop(
             continue
 
         # get meta tasks
-        def _db_task() -> dict:
+        # TODO: rough patch, if in future have more than aws and nvidia, add proper type
+        # in db instead of monkey patching it.
+        def _db_task() -> dict | None:
             with db_session:
                 # New / never-attempted tasks first.
-                meta = select(
-                    m
-                    for m in DriverMeta
-                    if not ArchiveEntry.select(lambda a: a.meta == m)
-                ).first()
-                if meta:
-                    return meta.to_json()
+                for meta in DriverMeta.select():
+                    meta_is_s3 = bool(
+                        meta.extra and meta.extra.get("type") == "S3 Gaming"
+                    )
+                    if isinstance(portal, AwsS3) and not meta_is_s3:
+                        continue
+                    if isinstance(portal, NvidiaWebPortal) and meta_is_s3:
+                        continue
+                    if not ArchiveEntry.select(lambda a: a.meta == meta).first():
+                        return meta.to_json()
 
-                archive = select(
+                for archive in select(
                     a
                     for a in ArchiveEntry
                     if a.verificationState == VerificationState.INCOMPLETE
                     and a.lastAttemptAt == None
-                ).first()
-                if not archive:
-                    archive = (
-                        select(
-                            a
-                            for a in ArchiveEntry
-                            if a.verificationState == VerificationState.INCOMPLETE
-                        )
-                        .order_by(lambda a: a.lastAttemptAt)
-                        .first()
+                ):
+                    meta_is_s3 = bool(
+                        archive.meta.extra
+                        and archive.meta.extra.get("type") == "S3 Gaming"
                     )
-                return archive.meta.to_json()
+                    if isinstance(portal, AwsS3) and meta_is_s3:
+                        return archive.meta.to_json()
+                    if isinstance(portal, NvidiaWebPortal) and not meta_is_s3:
+                        return archive.meta.to_json()
+
+                for archive in select(
+                    a
+                    for a in ArchiveEntry
+                    if a.verificationState == VerificationState.INCOMPLETE
+                ).order_by(lambda a: a.lastAttemptAt):
+                    meta_is_s3 = bool(
+                        archive.meta.extra
+                        and archive.meta.extra.get("type") == "S3 Gaming"
+                    )
+                    if isinstance(portal, AwsS3) and meta_is_s3:
+                        return archive.meta.to_json()
+                    if isinstance(portal, NvidiaWebPortal) and not meta_is_s3:
+                        return archive.meta.to_json()
+
+                return None
 
         #                 if state_cnt[VerificationState.INCOMPLETE]:
         #                     meta_json = (
@@ -230,7 +254,19 @@ async def main_loop(
 
         try:
             meta_json = await asyncio.to_thread(_db_task)
+            if not meta_json:
+                if next(timer):
+                    _logger.info(
+                        f"No {portal.__class__.__name__} tasks to queue, standby."
+                    )
+                continue
             download_json = await portal.get_download_url(meta_json["downloadId"])
+            if not download_json:
+                _logger.warning(
+                    f"Failed to resolve download url for {portal.__class__.__name__} "
+                    f"downloadId '{meta_json['downloadId']}', skipping."
+                )
+                continue
         except Exception as e:
             _logger.exception(
                 f"Failed to get download url with exception '{str(e)}', retrying."
@@ -246,15 +282,20 @@ def parse_arguments() -> argparse.ArgumentParser:
     Parse command-line arguments using rich argparse.
     """
     parser = argparse.ArgumentParser(
-        description="Download and upload NVIDIA drivers from enterprise portal.",
+        description="Download and upload archived driver files.",
         formatter_class=RichHelpFormatter,
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--download",
+        "--sync-nvidia",
         action="store_true",
-        help="Start the whole downloading/uploading procedure.",
+        help="Sync NVIDIA enterprise portal downloads.",
+    )
+    group.add_argument(
+        "--sync-aws",
+        action="store_true",
+        help="Sync AWS S3 gaming driver downloads.",
     )
     group.add_argument(
         "--docgen",
@@ -291,8 +332,10 @@ if __name__ == "__main__":
         parser.print_help()
         exit(1)
 
-    if args.download:
-        exit(asyncio.run(main()))
+    if args.sync_nvidia:
+        exit(asyncio.run(main("nvidia")))
+    elif args.sync_aws:
+        exit(asyncio.run(main("aws")))
     elif args.docgen:
         from docgen import DocGen  # Assuming DocGen is implemented in docgen module
 

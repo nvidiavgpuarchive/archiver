@@ -17,7 +17,7 @@ class GlobalConfig:
 
 
 @dataclass(frozen=True)
-class PortalConfig:
+class NvidiaPortalConfig:
     nvidia_username: str
     nvidia_password: str
 
@@ -47,12 +47,19 @@ class IAConfig:
 
 
 @dataclass(frozen=True)
+class AwsS3Config:
+    linux_json_path: str
+    windows_json_path: str
+
+
+@dataclass(frozen=True)
 class AppConfig:
     global_: GlobalConfig
-    portal: PortalConfig
+    nvidia_portal: NvidiaPortalConfig
     downloader: DownloaderConfig
     imap: ImapConfig
     ia: IAConfig
+    aws_s3: AwsS3Config
 
 
 def _section(config: dict[str, Any], name: str) -> dict[str, Any]:
@@ -72,10 +79,11 @@ def load_config(path: str | PathLike[str] | None = None) -> AppConfig:
         raise TypeError("Config root must be a mapping.")
 
     global_config = _section(raw, "global")
-    portal_config = _section(raw, "portal")
+    nvidia_portal_config = _section(raw, "nvidia_portal")
     downloader_config = _section(raw, "downloader")
     imap_config = _section(raw, "imap")
     ia_config = _section(raw, "ia")
+    aws_s3_config = _section(raw, "aws_s3")
 
     return AppConfig(
         global_=GlobalConfig(
@@ -84,9 +92,9 @@ def load_config(path: str | PathLike[str] | None = None) -> AppConfig:
             num_workers=global_config["num_workers"],
             num_tasks=global_config["num_tasks"],
         ),
-        portal=PortalConfig(
-            nvidia_username=portal_config["nvidia_username"],
-            nvidia_password=portal_config["nvidia_password"],
+        nvidia_portal=NvidiaPortalConfig(
+            nvidia_username=nvidia_portal_config["nvidia_username"],
+            nvidia_password=nvidia_portal_config["nvidia_password"],
         ),
         downloader=DownloaderConfig(num_chunks=downloader_config["num_chunks"]),
         imap=ImapConfig(
@@ -103,5 +111,9 @@ def load_config(path: str | PathLike[str] | None = None) -> AppConfig:
             common_description=ia_config["common_description"],
             force_uploading=ia_config["force_uploading"],
             use_proxy=ia_config["use_proxy"],
+        ),
+        aws_s3=AwsS3Config(
+            linux_json_path=aws_s3_config["linux_json_path"],
+            windows_json_path=aws_s3_config["windows_json_path"],
         ),
     )

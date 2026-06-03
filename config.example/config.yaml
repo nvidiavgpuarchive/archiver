@@ -4,7 +4,7 @@ global:
   num_workers: 1 # optimal is 8
   num_tasks: -1 # complete this number of tasks and then exit, -1 to run indefinitely
 
-portal:
+nvidia_portal:
   nvidia_username: "example_username"
   nvidia_password: "example_password"
 
@@ -29,3 +29,7 @@ ia:
     <hr>
   force_uploading: True # if true try to upload to bucket no matter it exists or not
   use_proxy: False # using proxy may cause frequent large file upload timeout
+
+aws_s3:
+  linux_json_path: "config/gamingdrivers/linux.json"
+  windows_json_path: "config/gamingdrivers/windows.json"

@@ -326,7 +326,7 @@ class DocGen:
     @staticmethod
     def _update_placeholder(docdir: str) -> None:
         with utils.TouchAndOpen(os.path.join(docdir, ".docgen"), "w") as f:
-            f.write(str(round(time.time(), -5)))
+            f.write(str(round(time.time(), -4)))
 
     @staticmethod
     def _get_detail_filepath(entry: JinjaEntry) -> str:
