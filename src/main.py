@@ -70,7 +70,7 @@ class SignalHandler:
 
 
 async def main(source: str) -> None:
-    ui_worker = await AppTUI().start()
+    ui_worker = AppTUI()
 
     queue = asyncio.Queue()
     shutdown_ctrl = asyncio.Event()  # controlled by signal handler, control mainloop
@@ -81,14 +81,16 @@ async def main(source: str) -> None:
 
     # config and db setup
     config = app_config.load_config()
-    db.mark_all_pending_incomplete()
 
     download_dir = config.global_.download_dir
     if not os.path.exists(download_dir):
         os.mkdir(download_dir)
     elif os.listdir(download_dir):
         _logger.fatal(f"Download dir '{download_dir}' not empty, exiting.")
-        exit(-1)
+        raise SystemExit(-1)
+
+    db.mark_all_pending_incomplete()
+    await ui_worker.start()
 
     # init workers
 

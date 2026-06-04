@@ -28,19 +28,38 @@
 
 
 {% macro table_filelist(filelists) -%}
-| Description            | Product Version    | Platform                | Platform Version           | Release Date           |             Actions              |
-| ---------------------- | :----------------- | :---------------------- | -------------------------- | :--------------------- | :------------------------------: |
+{% set columns = [
+  {"label": "Description", "key": "description", "always": true},
+  {"label": "Product Version", "key": "version"},
+  {"label": "Platform", "key": "platformName"},
+  {"label": "Platform Version", "key": "platformVersion"},
+  {"label": "Release Date", "key": "releaseDate"},
+] -%}
+{% set visible = [] -%}
+{% for col in columns -%}
+    {% set ns = namespace(show=col.always|default(false)) -%}
+    {% for d in filelists -%}
+        {% if d.entry.meta[col.key] -%}
+            {% set ns.show = true -%}
+        {% endif -%}
+    {% endfor -%}
+    {% if ns.show -%}
+        {% set _ = visible.append(col) -%}
+    {% endif -%}
+{% endfor -%}
+|{% for col in visible %} {{ col.label }} |{% endfor %} Actions |
+|{% for col in visible %} --- |{% endfor %} :---: |
 {% for d in filelists -%}
-| {{ d.entry.meta.description }} | {{ d.entry.meta.version }} | {{ d.entry.meta.platformName }} | {{ d.entry.meta.platformVersion }} | {{ d.entry.meta.releaseDate }} | [View Details]({{ d.url }}) |
+|{% for col in visible %} {{ d.entry.meta[col.key] }} |{% endfor %} [View Details]({{ d.url }}) |
 {% endfor -%}
 {% endmacro -%}
 
 
 {% macro table_index(indexes, cur_option, show_newest=False) -%}
 
-| {{ cur_option|title }} | Last Updated | {% if show_newest %}  Latest Entry | {% endif %} Count | Filter | 
+| {{ cur_option|title }} | Last Updated | {% if show_newest %}  Latest Entry | {% endif %} Count | Browse | 
 |---|:-------:|:-------:|:----:|{% if show_newest %}:---:| {% endif %} 
 {% for index in indexes-%}
-| {{ index.option_value }} | {{ index.newest_entry.entry.meta.releaseDate  }}|  {% if show_newest %}  [View Latest]({{ index.newest_entry.url }}) | {% endif %} {{index.result_cnt }} |  [Apply]({{ index.nextlevel_url }}) |
+| {{ index.option_value }} | {{ index.newest_entry.entry.meta.releaseDate  }}|  {% if show_newest %}  [View Latest]({{ index.newest_entry.url }}) | {% endif %} {{index.result_cnt }} |  [Browse]({{ index.nextlevel_url }}) |
 {% endfor-%}
 {% endmacro -%}

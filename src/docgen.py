@@ -371,7 +371,7 @@ class DocGen:
             src_path = join(src_dir, item)
             dst_path = join(self._docdir, item)
             if os.path.isdir(src_path):
-                shutil.copytree(src_path, dst_path)
+                shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
             elif os.path.isfile(src_path):
                 shutil.copy2(src_path, dst_path)  # shutil.copy2 preserves metadata
 
