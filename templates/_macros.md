@@ -57,7 +57,7 @@
 
 {% macro table_index(indexes, cur_option, show_newest=False) -%}
 
-| {{ cur_option|title }} | Last Updated | {% if show_newest %}  Latest Entry | {% endif %} Count | Browse | 
+| {{ cur_option|title }} | Last Updated | {% if show_newest %}  Latest Entry | {% endif %} Count | | 
 |---|:-------:|:-------:|:----:|{% if show_newest %}:---:| {% endif %} 
 {% for index in indexes-%}
 | {{ index.option_value }} | {{ index.newest_entry.entry.meta.releaseDate  }}|  {% if show_newest %}  [View Latest]({{ index.newest_entry.url }}) | {% endif %} {{index.result_cnt }} |  [Browse]({{ index.nextlevel_url }}) |

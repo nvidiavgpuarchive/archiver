@@ -3,7 +3,6 @@ import json
 import os
 import shutil
 import time
-from collections import defaultdict
 from datetime import datetime
 from math import floor
 from os.path import exists, join
@@ -66,6 +65,19 @@ class DocGen:
     GAMING_DRIVER_PARTITION_ORDER = [
         "category",
         "platformName",
+    ]
+    META_SORT_ORDER = [
+        "category",
+        "platformName",
+        "platformVersion",
+        "version",
+        "name",
+        "description",
+        "productName",
+        "productFamilies",
+        "releaseDate",
+        "downloadType",
+        "linkType",
     ]
 
     def __init__(self, docdir: str) -> None:
@@ -168,34 +180,35 @@ class DocGen:
     ) -> Any:
         level_limit = min(level_limit, len(partition_order))
 
+        sort_fields = list(partition_order)
+        sort_fields += [
+            field for field in DocGen.META_SORT_ORDER if field not in sort_fields
+        ]
+
         def _rec(index: list[str], level: int) -> Any:
+            sorted_index = sorted(
+                index,
+                key=lambda idx: tuple(
+                    DocGen._option_cmp_keyfunc(db_dump[idx]["meta"].get(field, ""))
+                    for field in sort_fields
+                ),
+                reverse=True,
+            )
             if (  # turn nested index into a filelist, if too few items, or linear shape
                 len(index) <= 15 or level >= level_limit
             ):
-                return sorted(
-                    index,
-                    key=lambda x: tuple(
-                        DocGen._option_cmp_keyfunc(db_dump[x]["meta"].get(o, ""))
-                        for o in partition_order
-                    ),
-                    reverse=True,
-                )
+                return sorted_index
 
-            index_options_map = {
-                idx: db_dump[idx]["meta"].get(partition_order[level], "OTHER")
-                for idx in index
-            }
-            sorted_options = sorted(
-                set(index_options_map.values()),
-                key=DocGen._option_cmp_keyfunc,
-                reverse=True,
-            )
-
-            options_index_map = defaultdict(list)
-            for idx, option in index_options_map.items():
+            options_index_map = {}
+            for idx in sorted_index:
+                option = db_dump[idx]["meta"].get(partition_order[level], "OTHER")
+                options_index_map.setdefault(option, [])
                 options_index_map[option].append(idx)
 
-            res = {o: _rec(options_index_map[o], level + 1) for o in sorted_options}
+            res = {
+                o: _rec(next_index, level + 1)
+                for o, next_index in options_index_map.items()
+            }
             if all(  # dict[list[str]] -> # list[str]
                 isinstance(item, list) and len(item) == 1 and isinstance(item[0], str)
                 for item in res.values()
@@ -444,8 +457,17 @@ class DocGen:
     # sort options
     @staticmethod
     def _option_cmp_keyfunc(
-        key: str,
+        key: Any,
     ) -> tuple[int | float, int | float, str]:  # to allow correct versioning
+        if key is None:
+            key = ""
+        elif isinstance(key, list):
+            key = json.dumps(key)
+        elif isinstance(key, dict):
+            key = json.dumps(key, sort_keys=True)
+        elif not isinstance(key, str):
+            key = str(key)
+
         def _complement_str(s: str) -> str:
             if s == "OTHER":  # dirty patch
                 return "0" * 10
